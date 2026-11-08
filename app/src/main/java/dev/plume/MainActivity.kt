@@ -4705,11 +4705,11 @@ class MainActivity : Activity() {
                 clipToPadding = false
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
-                setPadding(dp(16), dp(8), dp(16), dp(18))
+                setPadding(dp(16), dp(16), dp(16), dp(20))
                 layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                     marginStart = dp(-16)
                     marginEnd = dp(-16)
-                    topMargin = dp(4)
+                    topMargin = dp(-4)
                 }
             }
             val ytDrawerRow = LinearLayout(this).apply {
@@ -8352,8 +8352,8 @@ class MainActivity : Activity() {
     }
 
     private fun ytPreviewCard(p: Prog): View {
-        val w = dp(196)
-        val h = dp(110)
+        val w = dp(184)
+        val h = dp(103)
         val gap = dp(GRID_GAP)
 
         val col = LinearLayout(this).apply {

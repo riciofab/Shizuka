@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- **Épinglage et gestion des vignettes dans les tiroirs.** Appui long sur n'importe quelle vignette de tiroir (chaînes TV, reprises de lecture) pour l'épingler en tête avec une étoile (★), la masquer ou ouvrir son application parente.
+- **Diaporama automatique en veille.** Nouveau réglage permettant de faire défiler automatiquement vos fonds d'écran avec transition douce en fondu enchaîné pendant le mode veille (5, 10 ou 30 min).
+- **Pastille « En cours de lecture » en veille.** Affichage discret du titre et de l'artiste de la musique en cours sous l'horloge en mode veille, avec suivi du décalage OLED.
+- **Progression du téléchargement OTA.** Affichage du pourcentage de progression en temps réel lors du téléchargement d'une mise à jour.
+- **Optimisation de la détection HDMI & taille APK.** Détection strictly matérielle des ports HDMI sans entrées factices et compilation optimisée R8 (APK allégé à moins de 1 Mo).
+
 ## 1.3.0
 
 - **Réglages de tiroir par application & 5 tailles de vignettes.** Configurez indépendamment pour chaque application l'activation du tiroir, le délai d'ouverture (de 0,5 s à 3,0 s), les flux actifs et la taille des vignettes (**Très petite**, **Petite**, **Standard**, **Grande**, **Très grande**), avec **Très petite** par défaut pour Free TV / OQEE.

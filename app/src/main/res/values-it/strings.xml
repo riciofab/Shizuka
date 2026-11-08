@@ -321,4 +321,12 @@
     <string name="clock_medium">Medio</string>
     <string name="clock_large">Grande</string>
     <string name="help_clock_size">Quanto è grande l’orologio nella Home.</string>
+    <string name="updating_pct">Aggiornamento… %1$d%%</string>
+    <string name="drawer_pin">Fissa in primo piano</string>
+    <string name="drawer_unpin">Rimuovi dai fissati</string>
+    <string name="drawer_hide">Nascondi questo elemento</string>
+    <string name="standby_slideshow">Presentazione cornice foto</string>
+    <string name="slideshow_30m">30 minuti</string>
+    <string name="standby_music">In riproduzione nella cornice foto</string>
+    <string name="music_access_hint">Consenti a Shizuka in «Accesso alle notifiche» di mostrare cosa è in riproduzione</string>
 </resources>

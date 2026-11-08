@@ -66,12 +66,7 @@ object TopInputManager {
                 )
             }
         }
-        return listOf(
-            TopInput("input_switch", "Nintendo Switch", "nintendoswitch"),
-            TopInput("input_wii", "Nintendo Wii", "wii"),
-            TopInput("input_freebox", "Freebox Delta", "freebox"),
-            TopInput("input_pc", "PC", "pc")
-        )
+        return emptyList()
     }
 
     fun saveInputs(prefs: SharedPreferences, inputs: List<TopInput>) {

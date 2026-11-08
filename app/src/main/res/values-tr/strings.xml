@@ -221,4 +221,12 @@
     <string name="clock_large">Büyük</string>
     <string name="help_clock_size">Ana ekrandaki saatin boyutu.</string>
     <string name="section_clock_weather">Saat ve hava durumu</string>
+    <string name="updating_pct">Güncelleniyor… %1$d%%</string>
+    <string name="drawer_pin">En başa sabitle</string>
+    <string name="drawer_unpin">Sabitlemeyi kaldır</string>
+    <string name="drawer_hide">Bu öğeyi gizle</string>
+    <string name="standby_slideshow">Fotoğraf çerçevesi slayt gösterisi</string>
+    <string name="slideshow_30m">30 dakika</string>
+    <string name="standby_music">Fotoğraf çerçevesinde çalan</string>
+    <string name="music_access_hint">Çalanı göstermek için Shizuka\'ya Bildirim erişimi izni verin</string>
 </resources>

@@ -307,4 +307,12 @@
     <string name="clock_medium">Mediano</string>
     <string name="clock_large">Grande</string>
     <string name="help_clock_size">El tamaño del reloj en Inicio.</string>
+    <string name="updating_pct">Actualizando… %1$d%%</string>
+    <string name="drawer_pin">Fijar al principio</string>
+    <string name="drawer_unpin">Quitar de fijados</string>
+    <string name="drawer_hide">Ocultar este elemento</string>
+    <string name="standby_slideshow">Presentación del marco de fotos</string>
+    <string name="slideshow_30m">30 minutos</string>
+    <string name="standby_music">Reproduciendo en el marco de fotos</string>
+    <string name="music_access_hint">Permite a Shizuka en «Acceso a notificaciones» para mostrar lo que suena</string>
 </resources>

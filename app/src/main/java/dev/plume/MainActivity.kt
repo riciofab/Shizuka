@@ -230,7 +230,7 @@ internal fun hdmiIcon(name: String, named: Boolean): String {
     val n = name.lowercase()
     return when {
         "wii" in n -> "wii"
-        "freebox" in n || "delta" in n || "player" in n -> "freebox"
+        "freebox" in n || "freebox player" in n || "delta" in n -> "freebox"
         "pc" in n || "ordinateur" in n || "computer" in n || "laptop" in n -> "pc"
         "playstation" in n || "ps5" in n || "ps4" in n || "ps3" in n -> "playstation"
         "xbox" in n -> "xbox"
@@ -1308,12 +1308,124 @@ class MainActivity : Activity() {
                     clock.translationY = cleanClockTy + cleanShiftY
                     dateLine.translationX = cleanDateTx + cleanShiftX
                     dateLine.translationY = cleanDateTy + cleanShiftY
+                    nowPlayingView?.let { it.translationX = cleanShiftX; it.translationY = cleanShiftY }
                     scrim?.invalidate()
                 }
                 start()
             }
             ui.postDelayed(this, 14_000L)
         }
+    }
+
+    /** A photo the standby slideshow is showing in place of the chosen wallpaper; never saved, dropped when standby ends. */
+    @Volatile private var standbyWallpaper: String? = null
+    private var slideshowIdx = 0
+
+    private val slideshowRunnable = object : Runnable {
+        override fun run() {
+            if (!clean || !resumed || isDestroyed) return
+            val minutes = prefs.getInt("standby_slideshow", 0)
+            if (minutes <= 0) return
+            nextStandbyPhoto()?.let { standbyWallpaper = it; loadWallpaper() } // loadWallpaper crossfades
+            ui.postDelayed(this, minutes * 60_000L)
+        }
+    }
+
+    /** The next photo to show (yours, built-in, downloaded packs), or null when there's nothing else to cycle to. */
+    private fun nextStandbyPhoto(): String? {
+        if (prefs.getString("theme", null) == "wallpaper") return null // that theme follows the picture and would restart the screen
+        val shown = currentWallpaper()
+        if (shown.startsWith("video:")) return null
+        val pool = (wallpaperChoices(dark).map { it.second }.filter { it.startsWith("file:") || it.startsWith("res:") } +
+            builtIns(dark).filter { it.startsWith("pack:") }).distinct().filter { movedWallpaper(it) == it }
+        if (pool.size < 2) return null
+        repeat(pool.size) {
+            val c = pool[slideshowIdx++ % pool.size]
+            if (c != shown) return c
+        }
+        return null
+    }
+
+    // ---------- "now playing" pill in standby ----------
+    private var nowPlayingView: TextView? = null
+
+    private val nowPlayingRunnable = object : Runnable {
+        override fun run() {
+            if (!clean || !resumed || isDestroyed) return
+            showNowPlaying(if (prefs.getBoolean("standby_music", false)) currentTrack() else null)
+            ui.postDelayed(this, 5_000L)
+        }
+    }
+
+    private fun notificationListenerOn(): Boolean {
+        val me = ComponentName(this, NowPlayingService::class.java)
+        return Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+            .split(':').any { ComponentName.unflattenFromString(it) == me }
+    }
+
+    /** Title and artist of what an app is playing right now, or null (nothing playing, or no access yet). */
+    private fun currentTrack(): String? = try {
+        getSystemService(android.media.session.MediaSessionManager::class.java)
+            .getActiveSessions(ComponentName(this, NowPlayingService::class.java))
+            .firstOrNull { it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
+            ?.metadata?.let { m ->
+                val title = m.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                val artist = m.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+                    ?: m.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                when {
+                    title.isNullOrBlank() -> null
+                    artist.isNullOrBlank() -> title
+                    else -> "$title — $artist"
+                }
+            }
+    } catch (_: Exception) {
+        null // no access (SecurityException) or the media service isn't ready
+    }
+
+    private fun showNowPlaying(track: String?) {
+        val root = findViewById<FrameLayout>(R.id.root) ?: return
+        val v = nowPlayingView ?: TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            maxLines = 1
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+            maxWidth = dp(640)
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+            alpha = 0f
+            isFocusable = false
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(0x38FFFFFF)
+                setStroke(dp(1), 0x80FFFFFF.toInt())
+            }
+        }.also {
+            nowPlayingView = it
+            root.addView(it, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(56) })
+        }
+        if (track != null) {
+            v.text = "♪  $track"
+            v.animate().alpha(1f).setDuration(400).start()
+        } else {
+            v.animate().alpha(0f).setDuration(400).start()
+        }
+    }
+
+    /** Switching it on needs notification access: set directly when adb gave us the secure-settings permission, else Android's screen. */
+    private fun toggleNowPlaying() {
+        val on = !prefs.getBoolean("standby_music", false)
+        prefs.edit().putBoolean("standby_music", on).apply()
+        if (on && !notificationListenerOn()) {
+            if (checkSelfPermission(WRITE_SECURE) == PackageManager.PERMISSION_GRANTED) {
+                val me = ComponentName(this, NowPlayingService::class.java).flattenToString()
+                val cur = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+                Settings.Secure.putString(contentResolver, "enabled_notification_listeners", if (cur.isEmpty()) me else "$cur:$me")
+            } else {
+                toast(getString(R.string.music_access_hint), long = true, system = true)
+                openSettings("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            }
+        }
+        renderSettings(R.string.standby_music)
     }
 
     /** GPU Ken Burns cinematic zoom & pan on photo wallpapers while in standby mode. */
@@ -1449,6 +1561,10 @@ class MainActivity : Activity() {
                 ui.postDelayed(pixelShiftRunnable, 4_000L)
                 ui.removeCallbacks(kenBurnsRunnable)
                 ui.post(kenBurnsRunnable)
+                ui.removeCallbacks(slideshowRunnable)
+                prefs.getInt("standby_slideshow", 0).takeIf { it > 0 }?.let { ui.postDelayed(slideshowRunnable, it * 60_000L) }
+                ui.removeCallbacks(nowPlayingRunnable)
+                if (prefs.getBoolean("standby_music", false)) ui.post(nowPlayingRunnable)
 
                 standbyAnimator?.cancel()
                 if (animate) {
@@ -1477,6 +1593,13 @@ class MainActivity : Activity() {
                 shiftAnimator?.cancel()
                 ui.removeCallbacks(pixelShiftRunnable)
                 ui.removeCallbacks(kenBurnsRunnable)
+                ui.removeCallbacks(slideshowRunnable)
+                ui.removeCallbacks(nowPlayingRunnable)
+                nowPlayingView?.animate()?.alpha(0f)?.setDuration(if (animate) 300 else 0)?.start()
+                if (standbyWallpaper != null) { // back to the chosen wallpaper
+                    standbyWallpaper = null
+                    loadWallpaper()
+                }
                 cleanShiftX = 0f
                 cleanShiftY = 0f
                 findViewById<View>(R.id.wallpaper)?.let { wall ->
@@ -1782,7 +1905,7 @@ class MainActivity : Activity() {
 
     private fun defaultWallpaper(forDark: Boolean) = plainWallpaper(forDark)
 
-    private fun currentWallpaper(forDark: Boolean = dark) =
+    private fun currentWallpaper(forDark: Boolean = dark) = standbyWallpaper?.takeIf { forDark == dark } ?:
         prefs.getString(if (forDark) "wp_dark" else "wp_light", null)?.let { movedWallpaper(it) } ?: defaultWallpaper(forDark)
 
     /** Keep installed pack photos; only unavailable legacy choices fall back to a plain colour. */
@@ -3433,6 +3556,10 @@ class MainActivity : Activity() {
                 pokeIdle()
                 renderSettings(R.string.idle_clean)
             },
+            R.string.standby_slideshow to { d ->
+                prefs.edit().putInt("standby_slideshow", SLIDESHOW_TIMES.keys.toList().step(prefs.getInt("standby_slideshow", 0), d)).apply()
+                renderSettings(R.string.standby_slideshow)
+            },
             R.string.icon_style to { d ->
                 prefs.edit().putString("icon_style", ICON_STYLES.keys.toList().step(iconStyle(), d)).apply()
                 renderApps()
@@ -3616,6 +3743,10 @@ class MainActivity : Activity() {
             R.string.idle_clean to Triple(getString(R.string.idle_clean), getString(IDLE_CLEAN_TIMES[idleCleanMinutes()] ?: R.string.idle_clean_off)) {
                 steps[R.string.idle_clean]!!(1)
             },
+            R.string.standby_slideshow to Triple(getString(R.string.standby_slideshow), getString(SLIDESHOW_TIMES[prefs.getInt("standby_slideshow", 0)] ?: R.string.idle_clean_off)) {
+                steps[R.string.standby_slideshow]!!(1)
+            },
+            R.string.standby_music to Triple(getString(R.string.standby_music), toggle(prefs.getBoolean("standby_music", false))) { toggleNowPlaying() },
             R.string.test_screensaver to Triple(getString(R.string.test_screensaver), "") { testScreensaver() },
             R.string.screensaver_timing to Triple(getString(R.string.screensaver_timing), "") { openScreensaverSettings() },
             R.string.setup_home to Triple(getString(R.string.setup_home), "") { closeLauncherSettings(); startHomeSetup() },
@@ -3627,7 +3758,7 @@ class MainActivity : Activity() {
             },
             R.string.default_launcher to Triple(getString(R.string.default_launcher), if (isDefaultHome()) "Shizuka" else getString(R.string.press_to_set)) { makeDefaultHome() },
             R.string.updates to Triple(getString(R.string.updates), when {
-                updating -> getString(R.string.updating)
+                updating -> if (updatePct in 0..99) getString(R.string.updating_pct, updatePct) else getString(R.string.updating)
                 checking -> getString(R.string.checking)
                 availableUpdate() != null -> getString(R.string.update_available_row, availableUpdate())
                 notesUnseen() -> getString(R.string.whats_new_title, myVersion())
@@ -3661,7 +3792,7 @@ class MainActivity : Activity() {
                 R.string.cw_vertical_position, R.string.row_name, R.string.show_icons, R.string.cw_apps, R.string.cw_channels, R.string.restore_hidden)),
             Triple(R.string.section_clock_weather, if (weather == "off") on(false) else "${rows[R.string.weather_units]!!.second} · ${prefs.getString("geo_city", null) ?: rows[R.string.weather_location]!!.second}",
                 listOf(R.string.clock_style, R.string.clock_size, R.string.clock_seconds, R.string.weather, R.string.weather_units, R.string.weather_location)),
-            Triple(R.string.section_screensaver, rows[R.string.screensaver]!!.second, listOf(R.string.screensaver, R.string.idle_clean, R.string.test_screensaver, R.string.screensaver_timing)),
+            Triple(R.string.section_screensaver, rows[R.string.screensaver]!!.second, listOf(R.string.screensaver, R.string.idle_clean, R.string.standby_slideshow, R.string.standby_music, R.string.test_screensaver, R.string.screensaver_timing)),
             // Home app is Android TV's own way (Google TV and Fire OS keep their home); Fire OS never passes keys to us, so no smooth volume there.
             Triple(R.string.section_remote_home, if (homeSetUp()) getString(R.string.home_button) else on(false),
                 listOfNotNull(R.string.home_button, R.string.default_launcher.takeIf { !googleTv() && !fireTv() }, R.string.smooth_volume.takeIf { !fireTv() },
@@ -3699,6 +3830,7 @@ class MainActivity : Activity() {
                 R.string.clock_style to CLOCK_STYLES.values.map { getString(it) to null },
                 R.string.clock_size to CLOCK_SIZES.values.map { getString(it) to null },
                 R.string.idle_clean to IDLE_CLEAN_TIMES.values.map { getString(it) to null },
+                R.string.standby_slideshow to SLIDESHOW_TIMES.values.map { getString(it) to null },
             )
             val styles = keys.map { k ->
                 val cost = k == R.string.smooth_volume && prefs.getBoolean("smooth_volume", false)
@@ -5797,6 +5929,7 @@ class MainActivity : Activity() {
                 appRows.firstOrNull()?.getChildAt(0)?.requestFocus()
             }
             v.parent === wifi.parent -> topMenu(v)
+            v.getTag(R.id.watchScroll) == "yt_drawer" && v.getTag(R.id.watchRow) is Prog -> drawerMenu(v, v.getTag(R.id.watchRow) as Prog)
             v.getTag(R.id.watchRow) is Prog -> watchMenu(v, v.getTag(R.id.watchRow) as Prog)
             appRows.any { it === v.parent } -> appMenu(v)
         }
@@ -6902,6 +7035,7 @@ class MainActivity : Activity() {
 
     @Volatile private var checking = false
     @Volatile private var updating = false
+    @Volatile private var updatePct = -1 // download progress while [updating], -1 when unknown
 
     private fun myVersion() = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
 
@@ -7027,14 +7161,36 @@ class MainActivity : Activity() {
             return openSettings(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
         }
         updating = true
+        updatePct = -1
         renderSettings(R.string.updates)
         val installer = packageManager.packageInstaller
         val apk = File(cacheDir, ApkProvider.NAME)
         io.execute {
             val ok = try {
                 apk.delete()
-                openStream("https://github.com/$REPO/releases/download/v$ver/Shizuka.apk").use { input ->
-                    apk.outputStream().use { input.copyTo(it) }
+                val conn = (URL("https://github.com/$REPO/releases/download/v$ver/Shizuka.apk").openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                val total = conn.contentLengthLong
+                conn.inputStream.use { input ->
+                    apk.outputStream().use { out ->
+                        val buf = ByteArray(32 * 1024)
+                        var done = 0L
+                        var lastPct = -1
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            val pct = if (total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else -1
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                updatePct = pct
+                                ui.post { if (updating && settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.updates) }
+                            }
+                        }
+                    }
                 }
                 val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
                 params.setAppPackageName(packageName)
@@ -7642,11 +7798,44 @@ class MainActivity : Activity() {
     private fun feedForApp(pkg: String): List<Prog> {
         if (!ytDrawerEnabled(pkg)) return emptyList()
         val exact = youtubeFeed.filter { it.pkg == pkg }
-        if (exact.isNotEmpty()) return exact.take(12)
-        if (isYoutubeOrSmartTube(pkg)) {
-            return youtubeFeed.filter { isYoutubeOrSmartTube(it.pkg) }.take(12)
+        val list = when {
+            exact.isNotEmpty() -> exact.take(12)
+            isYoutubeOrSmartTube(pkg) -> youtubeFeed.filter { isYoutubeOrSmartTube(it.pkg) }.take(12)
+            else -> return emptyList()
         }
-        return emptyList()
+        val pinned = pinnedDrawerItems()
+        return if (pinned.isEmpty()) list else list.sortedByDescending { hideKey(it.pkg, it.title) in pinned } // stable: pinned first
+    }
+
+    private fun pinnedDrawerItems(): Set<String> = prefs.getStringSet("yt_pinned", emptySet()) ?: emptySet()
+
+    /** Hold OK on a drawer card: pin it to the front of its drawer (or let it go), hide it, or open its app. */
+    private fun drawerMenu(v: View, p: Prog) {
+        val key = hideKey(p.pkg, p.title)
+        val isPinned = key in pinnedDrawerItems()
+        holdMenu(v, listOfNotNull(
+            getString(if (isPinned) R.string.drawer_unpin else R.string.drawer_pin) to {
+                val set = pinnedDrawerItems().let { if (isPinned) it - key else it + key }
+                prefs.edit().putStringSet("yt_pinned", set).apply()
+                val scroller = activeYtDrawer
+                val row = activeYtRow
+                val parent = activeYtParentRow
+                val pkg = currentYtPkg
+                if (scroller != null && row != null && parent != null && pkg != null) {
+                    row.removeAllViews()
+                    showYtDrawer(pkg, scroller, row, parent)
+                    ui.post { ((row.getChildAt(0) as? ViewGroup)?.getChildAt(0))?.requestFocus() }
+                }
+            },
+            getString(R.string.drawer_hide) to { hideWatch(p) },
+            p.pkg?.let { pkg ->
+                getString(R.string.open_app) to {
+                    (packageManager.getLeanbackLaunchIntentForPackage(pkg) ?: packageManager.getLaunchIntentForPackage(pkg))
+                        ?.let { startActivity(it) }
+                    Unit
+                }
+            },
+        ))
     }
 
     private fun updateYoutubeWidget(list: List<Prog>) {
@@ -8722,7 +8911,7 @@ class MainActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = p.title
+            text = if (hideKey(p.pkg, p.title) in pinnedDrawerItems()) "★ ${p.title}" else p.title
             textSize = titleSp
             maxLines = 1
             isSingleLine = true
@@ -9042,7 +9231,7 @@ class MainActivity : Activity() {
             R.string.restore_hidden to R.drawable.ms_visibility_off,
             R.string.clock_style to R.drawable.ms_schedule, R.string.clock_size to R.drawable.ms_format_size, R.string.clock_seconds to R.drawable.ms_timer, R.string.weather to R.drawable.ms_partly_cloudy_day, R.string.weather_units to R.drawable.ms_thermostat, R.string.weather_location to R.drawable.ms_location_on,
             R.string.backup_restore to R.drawable.ms_folder,
-            R.string.screensaver to R.drawable.ms_bedtime, R.string.idle_clean to R.drawable.ms_bedtime, R.string.test_screensaver to R.drawable.ms_play_circle, R.string.screensaver_timing to R.drawable.ms_timer,
+            R.string.screensaver to R.drawable.ms_bedtime, R.string.idle_clean to R.drawable.ms_bedtime, R.string.standby_slideshow to R.drawable.ms_photo_library, R.string.standby_music to R.drawable.ms_podcasts, R.string.test_screensaver to R.drawable.ms_play_circle, R.string.screensaver_timing to R.drawable.ms_timer,
             R.string.home_button to R.drawable.ms_home, R.string.default_launcher to R.drawable.ms_home_app_logo, R.string.smooth_volume to R.drawable.ms_volume_up,
             R.string.section_keys to R.drawable.ms_keyboard, R.string.setup_home to R.drawable.ms_restart_alt,
         )
@@ -9107,6 +9296,12 @@ class MainActivity : Activity() {
             2 to R.string.idle_clean_2m,
             5 to R.string.idle_clean_5m,
             10 to R.string.idle_clean_10m,
+        )
+        val SLIDESHOW_TIMES = linkedMapOf(
+            0 to R.string.idle_clean_off,
+            5 to R.string.idle_clean_5m,
+            10 to R.string.idle_clean_10m,
+            30 to R.string.slideshow_30m,
         )
         const val BADGE = 0xFFFF453A.toInt()
         // Dark mode tokens, for AMOLED: true black, and near-black cards that read as cards because their edge

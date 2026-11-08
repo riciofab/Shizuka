@@ -519,4 +519,12 @@
     <string name="drawer_size_small">Small</string>
     <string name="drawer_size_medium">Medium</string>
     <string name="drawer_size_large">Large</string>
+    <string name="updating_pct">Updating… %1$d%%</string>
+    <string name="drawer_pin">Pin to the front</string>
+    <string name="drawer_unpin">Unpin</string>
+    <string name="drawer_hide">Hide this item</string>
+    <string name="standby_slideshow">Photo frame slideshow</string>
+    <string name="slideshow_30m">30 minutes</string>
+    <string name="standby_music">Now playing in photo frame</string>
+    <string name="music_access_hint">Allow Shizuka under Notification access to show what\'s playing</string>
 </resources>

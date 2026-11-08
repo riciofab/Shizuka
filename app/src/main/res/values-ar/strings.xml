@@ -237,4 +237,12 @@
     <string name="clock_large">كبير</string>
     <string name="help_clock_size">حجم الساعة في الشاشة الرئيسية.</string>
     <string name="section_clock_weather">الساعة والطقس</string>
+    <string name="updating_pct">جارٍ التحديث… %1$d%%</string>
+    <string name="drawer_pin">تثبيت في المقدمة</string>
+    <string name="drawer_unpin">إلغاء التثبيت</string>
+    <string name="drawer_hide">إخفاء هذا العنصر</string>
+    <string name="standby_slideshow">عرض شرائح إطار الصور</string>
+    <string name="slideshow_30m">30 دقيقة</string>
+    <string name="standby_music">قيد التشغيل في إطار الصور</string>
+    <string name="music_access_hint">اسمح لـ Shizuka ضمن «الوصول إلى الإشعارات» لعرض ما يتم تشغيله</string>
 </resources>

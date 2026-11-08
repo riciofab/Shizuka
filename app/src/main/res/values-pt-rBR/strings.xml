@@ -373,4 +373,12 @@
     <string name="clock_medium">Médio</string>
     <string name="clock_large">Grande</string>
     <string name="help_clock_size">O tamanho do relógio na tela inicial.</string>
+    <string name="updating_pct">Atualizando… %1$d%%</string>
+    <string name="drawer_pin">Fixar no início</string>
+    <string name="drawer_unpin">Desafixar</string>
+    <string name="drawer_hide">Ocultar este item</string>
+    <string name="standby_slideshow">Apresentação do porta-retratos</string>
+    <string name="slideshow_30m">30 minutos</string>
+    <string name="standby_music">Tocando agora no porta-retratos</string>
+    <string name="music_access_hint">Permita o Shizuka em «Acesso às notificações» para mostrar o que está tocando</string>
 </resources>

@@ -428,4 +428,12 @@
     <string name="drawer_size_small">Petite</string>
     <string name="drawer_size_medium">Moyenne</string>
     <string name="drawer_size_large">Grande</string>
+    <string name="updating_pct">Mise à jour… %1$d%%</string>
+    <string name="drawer_pin">Épingler en premier</string>
+    <string name="drawer_unpin">Désépingler</string>
+    <string name="drawer_hide">Masquer cet élément</string>
+    <string name="standby_slideshow">Diaporama du cadre photo</string>
+    <string name="slideshow_30m">30 minutes</string>
+    <string name="standby_music">En cours de lecture dans le cadre photo</string>
+    <string name="music_access_hint">Autorisez Shizuka dans « Accès aux notifications » pour afficher le titre en cours</string>
 </resources>

@@ -123,5 +123,16 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/home_override" />
         </service>
+
+        <!-- Lets the photo frame read what is playing (see NowPlayingService); only used when switched on in settings. -->
+        <service
+            android:name=".NowPlayingService"
+            android:exported="false"
+            android:label="Shizuka"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

@@ -1212,45 +1212,150 @@ class MainActivity : Activity() {
     private var cleanClockTy = 0f
     private var cleanDateTx = 0f
     private var cleanDateTy = 0f
+    private var cleanCapsuleW = 0f
+    private var cleanCapsuleH = 0f
+    private var cleanShiftX = 0f
+    private var cleanShiftY = 0f
+    private var standbyProgress = 0f
+    private var standbyAnimator: ValueAnimator? = null
+    private var shiftAnimator: ValueAnimator? = null
     private var pixelShiftStep = 0
     private var kenBurnsStep = 0
     private val smoothBreathInterpolator = android.view.animation.AccelerateDecelerateInterpolator()
 
-    /** Subtle 8-point orbit (±12dp X, ±8dp Y) every 45s in standby to protect OLED panels from static pixel burn-in. */
+    /** Custom zero-bloat drawable rendering the cinema dim veil, soft radial halo, and frosted Glass Capsule in standby. */
+    private val standbyOverlayDrawable = object : android.graphics.drawable.Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG)
+        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val blurPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val rect = RectF()
+        private val clipPath = Path()
+        private val haloMatrix = android.graphics.Matrix()
+
+        override fun draw(canvas: Canvas) {
+            val p = standbyProgress
+            if (p <= 0.001f) return
+            val w = bounds.width().toFloat()
+            val h = bounds.height().toFloat()
+            if (w <= 0f || h <= 0f) return
+
+            // 1. Cinema dimming veil across the whole screen (~38% dark at full standby)
+            canvas.drawColor(Color.argb((p * 96).toInt(), 0, 0, 0))
+
+            val cx = w / 2f + cleanShiftX
+            val cy = h / 2f + cleanShiftY
+            val capW = if (cleanCapsuleW > 0f) cleanCapsuleW else dp(440).toFloat()
+            val capH = if (cleanCapsuleH > 0f) cleanCapsuleH else dp(170).toFloat()
+
+            // 2. Wide elliptical radial dark halo behind the capsule for extra contrast over bright lights
+            val haloRx = capW * 0.85f
+            val haloRy = capH * 1.15f
+            val shader = android.graphics.RadialGradient(
+                0f, 0f, 1f,
+                intArrayOf(
+                    Color.argb((p * 150).toInt(), 0, 0, 0),
+                    Color.argb((p * 70).toInt(), 0, 0, 0),
+                    Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 0.55f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            haloMatrix.reset()
+            haloMatrix.postScale(haloRx, haloRy)
+            haloMatrix.postTranslate(cx, cy)
+            shader.setLocalMatrix(haloMatrix)
+            paint.shader = shader
+            canvas.drawRect(0f, 0f, w, h, paint)
+            paint.shader = null
+
+            // 3. Floating Glass Capsule around the centered Clock + Date + Weather block
+            val scale = 0.92f + 0.08f * p
+            val cw = capW * scale
+            val ch = capH * scale
+            rect.set(cx - cw / 2f, cy - ch / 2f, cx + cw / 2f, cy + ch / 2f)
+            val rad = dp(32).toFloat()
+
+            val blurBmp = surfaceBlur
+            if (blurBmp != null && !blurBmp.isRecycled) {
+                canvas.save()
+                clipPath.reset()
+                clipPath.addRoundRect(rect, rad, rad, Path.Direction.CW)
+                canvas.clipPath(clipPath)
+                blurPaint.alpha = (p * 235).toInt()
+                canvas.drawBitmap(blurBmp, null, bounds, blurPaint)
+                canvas.restore()
+            }
+
+            // Smoked glass tint + subtle vertical sheen
+            paint.shader = android.graphics.LinearGradient(
+                0f, rect.top, 0f, rect.bottom,
+                Color.argb((p * 115).toInt(), 18, 22, 30),
+                Color.argb((p * 155).toInt(), 8, 10, 15),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(rect, rad, rad, paint)
+            paint.shader = null
+
+            // Crisp specular glass rim
+            strokePaint.strokeWidth = dp(1).toFloat() * 1.2f
+            strokePaint.shader = android.graphics.LinearGradient(
+                0f, rect.top, 0f, rect.bottom,
+                Color.argb((p * 120).toInt(), 255, 255, 255),
+                Color.argb((p * 40).toInt(), 255, 255, 255),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(rect, rad, rad, strokePaint)
+            strokePaint.shader = null
+        }
+
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
+    /** Smooth 8-point orbit (±18dp X, ±12dp Y) every 14s in standby to protect OLED panels and gently float the capsule. */
     private val pixelShiftRunnable = object : Runnable {
         override fun run() {
             if (!clean || !resumed || isDestroyed) return
             val clock = findViewById<View>(R.id.clock) ?: return
             val dateLine = findViewById<View>(R.id.date)?.parent as? View ?: return
+            val scrim = findViewById<View>(R.id.wallpaperScrim)
             val (dxDp, dyDp) = when (pixelShiftStep++ % 8) {
-                0 -> 6 to -4
-                1 -> 12 to 0
-                2 -> 6 to 6
-                3 -> 0 to 8
-                4 -> -6 to 6
-                5 -> -12 to 0
-                6 -> -6 to -4
+                0 -> 10 to -6
+                1 -> 18 to 0
+                2 -> 10 to 9
+                3 -> 0 to 12
+                4 -> -10 to 9
+                5 -> -18 to 0
+                6 -> -10 to -6
                 else -> 0 to 0
             }
-            val dx = dp(dxDp).toFloat()
-            val dy = dp(dyDp).toFloat()
-            clock.animate()
-                .translationX(cleanClockTx + dx)
-                .translationY(cleanClockTy + dy)
-                .setDuration(4_000L)
-                .setInterpolator(smoothBreathInterpolator)
-                .start()
-            dateLine.animate()
-                .translationX(cleanDateTx + dx)
-                .translationY(cleanDateTy + dy)
-                .setDuration(4_000L)
-                .setInterpolator(smoothBreathInterpolator)
-                .start()
-            ui.postDelayed(this, 45_000L)
+            val startX = cleanShiftX
+            val startY = cleanShiftY
+            val targetX = dp(dxDp).toFloat()
+            val targetY = dp(dyDp).toFloat()
+            shiftAnimator?.cancel()
+            shiftAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 6_000L
+                interpolator = smoothBreathInterpolator
+                addUpdateListener { anim ->
+                    val f = anim.animatedValue as Float
+                    cleanShiftX = startX + (targetX - startX) * f
+                    cleanShiftY = startY + (targetY - startY) * f
+                    clock.translationX = cleanClockTx + cleanShiftX
+                    clock.translationY = cleanClockTy + cleanShiftY
+                    dateLine.translationX = cleanDateTx + cleanShiftX
+                    dateLine.translationY = cleanDateTy + cleanShiftY
+                    scrim?.invalidate()
+                }
+                start()
+            }
+            ui.postDelayed(this, 14_000L)
         }
     }
 
-    /** Ultra-light GPU Ken Burns slow zoom/pan on photo wallpapers while in standby mode. */
+    /** GPU Ken Burns cinematic zoom & pan on photo wallpapers while in standby mode. */
     private val kenBurnsRunnable = object : Runnable {
         override fun run() {
             if (!clean || !resumed || isDestroyed) return
@@ -1258,20 +1363,20 @@ class MainActivity : Activity() {
             val choice = currentWallpaper()
             if (choice.startsWith("plain:") || choice.startsWith("video:")) return
             val (scale, txDp, tyDp) = when (kenBurnsStep++ % 4) {
-                0 -> Triple(1.07f, 10, -6)
-                1 -> Triple(1.03f, -8, 5)
-                2 -> Triple(1.08f, -6, -8)
-                else -> Triple(1.0f, 0, 0)
+                0 -> Triple(1.14f, 26, -14)
+                1 -> Triple(1.06f, -24, 12)
+                2 -> Triple(1.15f, -20, -16)
+                else -> Triple(1.03f, 18, 12)
             }
             wall.animate()
                 .scaleX(scale)
                 .scaleY(scale)
                 .translationX(dp(txDp).toFloat())
                 .translationY(dp(tyDp).toFloat())
-                .setDuration(24_000L)
+                .setDuration(14_000L)
                 .setInterpolator(smoothBreathInterpolator)
                 .start()
-            ui.postDelayed(this, 24_500L)
+            ui.postDelayed(this, 14_200L)
         }
     }
 
@@ -1279,9 +1384,14 @@ class MainActivity : Activity() {
         val v = findViewById<TextView>(R.id.weather) ?: return
         val pill = v.background as? GradientDrawable ?: return
         if (v.isFocused || clean) {
-            val useLightPill = dark || clean || glassActive()
-            pill.setColor(if (useLightPill) 0x33FFFFFF.toInt() else 0x22000000.toInt())
-            pill.setStroke(dp(1), if (useLightPill) 0x66FFFFFF.toInt() else 0x4D000000.toInt())
+            if (clean) {
+                pill.setColor(0x38FFFFFF)
+                pill.setStroke(dp(1), 0x80FFFFFF.toInt())
+            } else {
+                val useLightPill = dark || glassActive()
+                pill.setColor(if (useLightPill) 0x33FFFFFF.toInt() else 0x22000000.toInt())
+                pill.setStroke(dp(1), if (useLightPill) 0x66FFFFFF.toInt() else 0x4D000000.toInt())
+            }
         } else {
             pill.setColor(Color.TRANSPARENT)
             pill.setStroke(0, Color.TRANSPARENT)
@@ -1302,7 +1412,6 @@ class MainActivity : Activity() {
         clean = on
         if (on) hideYtDrawerIfNeeded()
         updateWeatherPill(animate)
-        applyWallpaperScrim(animateStandby = animate)
         val views = listOf(R.id.inputsContainer, R.id.homeVerticalScroll, R.id.topMenuToggle, R.id.wifi, R.id.sourcesButton,
             R.id.allAppsButton, R.id.systemSettings, R.id.launcherSettings, R.id.powerButton, R.id.featured,
             R.id.badgeGamepad, R.id.badgeAudio).mapNotNull { findViewById<View>(it) }
@@ -1314,6 +1423,10 @@ class MainActivity : Activity() {
         val clock = findViewById<TextView>(R.id.clock)
         val dateLine = findViewById<View>(R.id.date)?.parent as? View
         val root = findViewById<View>(R.id.root)
+        val scrim = findViewById<View>(R.id.wallpaperScrim)
+        if (scrim != null && scrim.foreground !== standbyOverlayDrawable) {
+            scrim.foreground = standbyOverlayDrawable
+        }
         if (clock != null && dateLine != null && root != null && root.width > 0 && root.height > 0) {
             if (on) {
                 val clockScale = 1.75f
@@ -1341,10 +1454,16 @@ class MainActivity : Activity() {
                 val dBaseX = locD[0] - dateLine.translationX + dateLine.pivotX
                 val dBaseY = locD[1] - dateLine.translationY + dateLine.pivotY
 
+                val scaledClockW = clock.width * clockScale
                 val scaledClockH = clock.height * clockScale
+                val scaledDateW = visibleDateWidth * dateScale
                 val scaledDateH = dateLine.height * dateScale
                 val gap = dp(14).toFloat()
                 val totalH = scaledClockH + gap + scaledDateH
+                val totalW = maxOf(scaledClockW, scaledDateW)
+                cleanCapsuleW = totalW + dp(76).toFloat()
+                cleanCapsuleH = totalH + dp(48).toFloat()
+
                 val screenCenterX = root.width / 2f
                 val groupTopY = (root.height - totalH) / 2f
 
@@ -1360,27 +1479,45 @@ class MainActivity : Activity() {
                 cleanClockTy = cTy
                 cleanDateTx = dTx
                 cleanDateTy = dTy
+                cleanShiftX = 0f
+                cleanShiftY = 0f
                 pixelShiftStep = 0
                 kenBurnsStep = 0
+                shiftAnimator?.cancel()
                 ui.removeCallbacks(pixelShiftRunnable)
-                ui.postDelayed(pixelShiftRunnable, 45_000L)
+                ui.postDelayed(pixelShiftRunnable, 4_000L)
                 ui.removeCallbacks(kenBurnsRunnable)
                 ui.post(kenBurnsRunnable)
 
+                standbyAnimator?.cancel()
                 if (animate) {
+                    standbyAnimator = ValueAnimator.ofFloat(standbyProgress, 1f).apply {
+                        duration = 420L
+                        interpolator = DECELERATE
+                        addUpdateListener {
+                            standbyProgress = it.animatedValue as Float
+                            scrim?.invalidate()
+                        }
+                        start()
+                    }
                     clock.animate().translationX(cTx).translationY(cTy).scaleX(clockScale).scaleY(clockScale)
                         .setDuration(420).setInterpolator(DECELERATE).start()
                     dateLine.animate().translationX(dTx).translationY(dTy).scaleX(dateScale).scaleY(dateScale)
                         .setDuration(420).setInterpolator(DECELERATE).start()
                 } else {
+                    standbyProgress = 1f
+                    scrim?.invalidate()
                     clock.animate().cancel()
                     dateLine.animate().cancel()
                     clock.translationX = cTx; clock.translationY = cTy; clock.scaleX = clockScale; clock.scaleY = clockScale
                     dateLine.translationX = dTx; dateLine.translationY = dTy; dateLine.scaleX = dateScale; dateLine.scaleY = dateScale
                 }
             } else {
+                shiftAnimator?.cancel()
                 ui.removeCallbacks(pixelShiftRunnable)
                 ui.removeCallbacks(kenBurnsRunnable)
+                cleanShiftX = 0f
+                cleanShiftY = 0f
                 findViewById<View>(R.id.wallpaper)?.let { wall ->
                     if (animate) {
                         wall.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f)
@@ -1390,12 +1527,24 @@ class MainActivity : Activity() {
                         wall.scaleX = 1f; wall.scaleY = 1f; wall.translationX = 0f; wall.translationY = 0f
                     }
                 }
+                standbyAnimator?.cancel()
                 if (animate) {
+                    standbyAnimator = ValueAnimator.ofFloat(standbyProgress, 0f).apply {
+                        duration = 320L
+                        interpolator = DECELERATE
+                        addUpdateListener {
+                            standbyProgress = it.animatedValue as Float
+                            scrim?.invalidate()
+                        }
+                        start()
+                    }
                     clock.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
                         .setDuration(320).setInterpolator(DECELERATE).start()
                     dateLine.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
                         .setDuration(320).setInterpolator(DECELERATE).start()
                 } else {
+                    standbyProgress = 0f
+                    scrim?.invalidate()
                     clock.animate().cancel()
                     dateLine.animate().cancel()
                     clock.translationX = 0f; clock.translationY = 0f; clock.scaleX = 1f; clock.scaleY = 1f
@@ -2250,44 +2399,24 @@ class MainActivity : Activity() {
         set(watchRow, inWatch)
     }
 
-    private fun applyWallpaperScrim(animateStandby: Boolean = false) {
+    private fun applyWallpaperScrim() {
         val scrim = findViewById<View>(R.id.wallpaperScrim) ?: return
         val dimPct = prefs.getInt("wp_dim", 15)
-        fun makeNormalDrawable(): android.graphics.drawable.Drawable {
-            if (dimPct <= 0) return ColorDrawable(Color.TRANSPARENT)
-            val topAlpha = minOf(255, (dimPct * 1.65f * 2.55f).toInt())
-            val midAlpha = minOf(255, (dimPct * 0.90f * 2.55f).toInt())
-            val botAlpha = minOf(255, (dimPct * 1.45f * 2.55f).toInt())
-            return GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(
-                    Color.argb(topAlpha, 0, 0, 0),
-                    Color.argb(midAlpha, 0, 0, 0),
-                    Color.argb(botAlpha, 0, 0, 0)
-                )
-            ).apply { setDither(true) }
+        if (dimPct <= 0) {
+            scrim.background = null
+            return
         }
-        fun makeStandbyDrawable(): android.graphics.drawable.Drawable {
-            val base = makeNormalDrawable()
-            val cinemaVeil = ColorDrawable(0x2E000000)
-            val centerHalo = GradientDrawable().apply {
-                gradientType = GradientDrawable.RADIAL_GRADIENT
-                gradientRadius = dp(320).toFloat()
-                setGradientCenter(0.5f, 0.5f)
-                colors = intArrayOf(0x66000000, 0x29000000, Color.TRANSPARENT)
-                setDither(true)
-            }
-            return LayerDrawable(arrayOf(base, cinemaVeil, centerHalo))
-        }
-        if (animateStandby) {
-            val from = if (clean) makeNormalDrawable() else makeStandbyDrawable()
-            val to = if (clean) makeStandbyDrawable() else makeNormalDrawable()
-            val trans = TransitionDrawable(arrayOf(from, to)).apply { isCrossFadeEnabled = true }
-            scrim.background = trans
-            trans.startTransition(if (clean) 420 else 320)
-        } else {
-            scrim.background = if (clean) makeStandbyDrawable() else makeNormalDrawable()
-        }
+        val topAlpha = minOf(255, (dimPct * 1.65f * 2.55f).toInt())
+        val midAlpha = minOf(255, (dimPct * 0.90f * 2.55f).toInt())
+        val botAlpha = minOf(255, (dimPct * 1.45f * 2.55f).toInt())
+        scrim.background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.argb(topAlpha, 0, 0, 0),
+                Color.argb(midAlpha, 0, 0, 0),
+                Color.argb(botAlpha, 0, 0, 0)
+            )
+        ).apply { setDither(true) }
     }
 
     private fun wallpaperAdjustmentSummary(): String {

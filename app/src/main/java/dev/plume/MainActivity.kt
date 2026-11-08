@@ -7890,18 +7890,25 @@ class MainActivity : Activity() {
     }
 
     private val DRAWER_SIZES = linkedMapOf(
-        "small" to R.string.drawer_size_small,
-        "medium" to R.string.drawer_size_medium,
-        "large" to R.string.drawer_size_large
+        "smallest" to R.string.size_smallest,
+        "small" to R.string.size_small,
+        "standard" to R.string.size_standard,
+        "large" to R.string.size_large,
+        "largest" to R.string.size_largest
     )
 
     private fun ytDrawerEnabled(pkg: String?): Boolean =
         if (pkg == null) true else prefs.getBoolean("yt_drawer_on_$pkg", true)
 
     private fun ytDrawerSize(pkg: String?): String {
-        if (pkg == null) return "large"
-        val defaultSize = if (isOqee(pkg)) "small" else "large"
-        return prefs.getString("yt_drawer_size_$pkg", defaultSize)?.takeIf { it in DRAWER_SIZES } ?: defaultSize
+        if (pkg == null) return "largest"
+        val defaultSize = if (isOqee(pkg)) "smallest" else "largest"
+        val saved = prefs.getString("yt_drawer_size_$pkg", null)
+        return when {
+            saved == "medium" -> "standard"
+            saved in DRAWER_SIZES -> saved!!
+            else -> defaultSize
+        }
     }
 
     private fun ytDrawerDelayMs(pkg: String? = null): Long {
@@ -8137,7 +8144,7 @@ class MainActivity : Activity() {
 
         ytDrawerAnim?.cancel()
         val sizeKey = ytDrawerSize(pkg)
-        val wasFullyOpen = drawerScroller.visibility == View.VISIBLE && drawerScroller.height >= dp(80)
+        val wasFullyOpen = drawerScroller.visibility == View.VISIBLE && drawerScroller.height >= dp(60)
         val isNewPkg = currentYtPkg != pkg
 
         if (isNewPkg || drawerRow.childCount == 0) {
@@ -8147,8 +8154,10 @@ class MainActivity : Activity() {
             }
         }
         val maxInline = when (sizeKey) {
-            "small" -> 6
-            "medium" -> 5
+            "smallest" -> 10
+            "small" -> 8
+            "standard" -> 6
+            "large" -> 5
             else -> 4
         }
         (drawerRow.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
@@ -8185,8 +8194,10 @@ class MainActivity : Activity() {
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
             val minH = when (sizeKey) {
-                "small" -> dp(108)
-                "medium" -> dp(130)
+                "smallest" -> dp(80)
+                "small" -> dp(92)
+                "standard" -> dp(108)
+                "large" -> dp(130)
                 else -> dp(156)
             }
             val targetH = drawerScroller.measuredHeight.coerceAtLeast(minH)
@@ -8647,18 +8658,24 @@ class MainActivity : Activity() {
 
     private fun ytPreviewCard(p: Prog, sizeKey: String = ytDrawerSize(p.pkg)): View {
         val (w, h) = when (sizeKey) {
-            "small" -> dp(116) to dp(65)
-            "medium" -> dp(148) to dp(83)
+            "smallest" -> dp(74) to dp(42)
+            "small" -> dp(92) to dp(52)
+            "standard" -> dp(118) to dp(66)
+            "large" -> dp(148) to dp(83)
             else -> dp(184) to dp(103)
         }
         val titleSp = when (sizeKey) {
-            "small" -> 11f
-            "medium" -> 11.5f
+            "smallest" -> 10f
+            "small" -> 10.5f
+            "standard" -> 11f
+            "large" -> 11.5f
             else -> 12f
         }
         val subSp = when (sizeKey) {
-            "small" -> 10f
-            "medium" -> 10.5f
+            "smallest" -> 9f
+            "small" -> 9.5f
+            "standard" -> 10f
+            "large" -> 10.5f
             else -> 11f
         }
         val gap = dp(GRID_GAP)

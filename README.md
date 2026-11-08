@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.2.0-blue">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.4.0-blue">
   <img alt="Android 8.0+" src="https://img.shields.io/badge/Android-8.0%2B-3ddc84">
-  <img alt="APK size" src="https://img.shields.io/badge/APK-~0.4%20MB-blue">
+  <img alt="APK size" src="https://img.shields.io/badge/APK-<1%20MB-blue">
   <a href="LICENSE"><img alt="GPL-3.0 License" src="https://img.shields.io/github/license/riciofab/Shizuka"></a>
   <a href="https://github.com/riciofab/Shizuka"><img alt="GitHub Repo" src="https://img.shields.io/badge/GitHub-riciofab%2FShizuka-181717?logo=github"></a>
 </p>
@@ -49,19 +49,36 @@ Alors que Plume met l'accent sur un minimalisme strict avec une seule ligne d'ap
 * **Gestion avancée des entrées TV & appareils** (logos personnalisés Freebox Delta, PC, Nintendo Switch, Wii, etc.).
 * **Mode Cadre photo automatique** après inactivité.
 
-Le tout en conservant l'ADN initial : **0 dépendance superflue**, performance maximale, taille APK ultra-légère (~0.4 Mo), aucun tracker ni publicité.
+Le tout en conservant l'ADN initial : **0 dépendance superflue**, performance maximale, taille APK ultra-légère (< 1 Mo avec R8), aucun tracker ni publicité.
 
 ---
 
-## ✨ Fonctionnalités ajoutées dans Shizuka (v1.1.0)
+## ✨ Fonctionnalités majeures de Shizuka
 
-### 🎬 0. Tiroirs de flux dynamiques par application (Nouveau en v1.1.0)
+### 🎬 1. Tiroirs de flux dynamiques par application & personnalisation
 - Sélectionnez une application vidéo (**YouTube**, **SmartTube**, **Netflix**, **Prime Video**, **Disney+**, **Crunchyroll**, **ADN**, **Shadowz**, **RTP Play**, **OQEE by Free**) pour déployer automatiquement ses recommandations ou reprises de lecture sous la ligne, avec une **animation en cascade fluide**.
-- **Sélecteur de canaux par application** accessible via un appui long sur l'icône (**Flux du tiroir**) ou depuis les paramètres.
-- **Jauge de délai configurable** de **0.5 s à 3.0 s** avant l'ouverture du tiroir.
-- **Mode veille plein écran** : l'horloge, la date et la météo s'agrandissent et glissent au centre de l'écran en mode cadre photo.
+- **Gestion des vignettes par appui long** : épinglez vos chaînes et vidéos favorites en premier (marquées d'une étoile ★), masquez les vignettes indésirables ou lancez directement l'application associée.
+- **Réglages indépendants par application** :
+  - Activation ou désactivation du tiroir par application.
+  - Choix parmi **5 tailles de vignettes** (*Très petite* [idéale pour Free TV], *Petite*, *Standard*, *Grande*, *Très grande*).
+  - Jauge de délai configurable de **0.5 s à 3.0 s**.
+  - Sélection précise des canaux actifs par application.
+- Rapprochement vertical élégant sous la rangée parente et fermeture propre au bouton Retour sans déclencher la veille.
 
-### 🌈 1. Lueurs de sélection néon personnalisées
+### 🖼️ 2. Mode Veille / Cadre photo cinématique
+- Horloge agrandie et centrée avec transition fluide.
+- **Pastille météo** conservée en veille pour consulter la température d'un coup d'œil.
+- **Diaporama automatique** : faites défiler vos fonds d'écran avec un fondu enchaîné doux (toutes les 5, 10 ou 30 min).
+- **Pastille « En cours de lecture »** : affiche discrètement le titre et l'artiste en lecture sur la TV (Spotify, YouTube Music, etc.).
+- **Protection anti-marquage OLED Pixel Shift** : orbite invisible sur 8 points pour préserver les dalles OLED.
+- **Effet cinématique Ken Burns** : zoom et travelling doux accéléré matériellement sur le processeur graphique.
+- Voile d'assombrissement cinéma et halo radial diffus sans cadre pour une lisibilité parfaite de l'heure.
+
+### 🌤️ 3. Météo interactive étendue
+- Pastille interactive sous l'horloge ouvrant une carte en verre dépoli complète : ville, température actuelle, min/max du jour, vent, humidité et prévisions détaillées à 3 jours.
+- Panneau de réglages flottant façon **tvOS** aux 4 coins arrondis.
+
+### 🌈 4. Lueurs de sélection néon personnalisées
 Personnalisez le contour lumineux autour des tuiles sélectionnées avec un aperçu en temps réel :
 - **8 palettes de couleurs :**
   - *Google Arc-en-ciel* (Bleu, rouge, jaune, vert style Gemini)
@@ -126,10 +143,10 @@ Compatible avec **Android TV** et **Google TV** (Android 8.0 et supérieur).
 ```sh
 git clone https://github.com/riciofab/Shizuka.git
 cd Shizuka
-./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
-L'APK généré sera disponible dans `app/build/outputs/apk/debug/app-debug.apk`.
+L'APK optimisé sera disponible dans `app/build/outputs/apk/release/app-release.apk` (ou `assembleDebug` pour le développement).
 
 ---
 

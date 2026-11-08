@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- **Réglages de tiroir par application & 5 tailles de vignettes.** Configurez indépendamment pour chaque application l'activation du tiroir, le délai d'ouverture (de 0,5 s à 3,0 s), les flux actifs et la taille des vignettes (**Très petite**, **Petite**, **Standard**, **Grande**, **Très grande**), avec **Très petite** par défaut pour Free TV / OQEE.
+- **Ergonomie des tiroirs améliorée.** Rapprochement vertical des vignettes sous leur barre d'applications parente, fermeture directe du tiroir avec la touche **Retour** sans déclencher la veille et ajustement des marges pour que la lueur néon supérieure ne soit jamais coupée.
+- **Mode Veille / Cadre photo sublimé.** Pastille météo conservée en veille, voile cinéma et halo radial doux sans bordure pour une lisibilité parfaite de l'horloge, effet **Ken Burns** fluide sur les fonds d'écran photo et protection anti-marquage **OLED Pixel Shift**.
+
 ## 1.2.0
 
 - **Widget Météo interactif étendu.** Sélectionnez la pastille météo sous l'horloge pour ouvrir une carte en verre dépoli affichant la ville, la température, les min/max du jour, l'humidité, le vent et les prévisions des 3 prochains jours.

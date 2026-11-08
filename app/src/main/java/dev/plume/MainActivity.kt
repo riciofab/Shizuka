@@ -500,21 +500,10 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.weather)?.apply {
             isFocusable = true
             isClickable = true
-            val pill = GradientDrawable().apply {
+            background = GradientDrawable().apply {
                 cornerRadius = dp(20).toFloat()
             }
-            background = pill
-            setOnFocusChangeListener { v, focused ->
-                if (focused) {
-                    pill.setColor(if (glassActive()) (if (dark) 0x33FFFFFF.toInt() else 0x4DFFFFFF.toInt()) else (if (dark) 0x33FFFFFF.toInt() else 0x22000000.toInt()))
-                    pill.setStroke(dp(1), if (dark) 0x66FFFFFF.toInt() else 0x4D000000.toInt())
-                } else {
-                    pill.setColor(Color.TRANSPARENT)
-                    pill.setStroke(0, Color.TRANSPARENT)
-                }
-                v.animate().scaleX(if (focused) 1.05f else 1f).scaleY(if (focused) 1.05f else 1f)
-                    .setDuration(160).setInterpolator(DECELERATE).start()
-            }
+            setOnFocusChangeListener { _, _ -> updateWeatherPill() }
             setOnClickListener { showExpandedWeather() }
         }
         renderInputsBar()
@@ -1219,11 +1208,101 @@ class MainActivity : Activity() {
         return Color.HSVToColor(hsv)
     }
 
+    private var cleanClockTx = 0f
+    private var cleanClockTy = 0f
+    private var cleanDateTx = 0f
+    private var cleanDateTy = 0f
+    private var pixelShiftStep = 0
+    private var kenBurnsStep = 0
+    private val smoothBreathInterpolator = android.view.animation.AccelerateDecelerateInterpolator()
+
+    /** Subtle 8-point orbit (±12dp X, ±8dp Y) every 45s in standby to protect OLED panels from static pixel burn-in. */
+    private val pixelShiftRunnable = object : Runnable {
+        override fun run() {
+            if (!clean || !resumed || isDestroyed) return
+            val clock = findViewById<View>(R.id.clock) ?: return
+            val dateLine = findViewById<View>(R.id.date)?.parent as? View ?: return
+            val (dxDp, dyDp) = when (pixelShiftStep++ % 8) {
+                0 -> 6 to -4
+                1 -> 12 to 0
+                2 -> 6 to 6
+                3 -> 0 to 8
+                4 -> -6 to 6
+                5 -> -12 to 0
+                6 -> -6 to -4
+                else -> 0 to 0
+            }
+            val dx = dp(dxDp).toFloat()
+            val dy = dp(dyDp).toFloat()
+            clock.animate()
+                .translationX(cleanClockTx + dx)
+                .translationY(cleanClockTy + dy)
+                .setDuration(4_000L)
+                .setInterpolator(smoothBreathInterpolator)
+                .start()
+            dateLine.animate()
+                .translationX(cleanDateTx + dx)
+                .translationY(cleanDateTy + dy)
+                .setDuration(4_000L)
+                .setInterpolator(smoothBreathInterpolator)
+                .start()
+            ui.postDelayed(this, 45_000L)
+        }
+    }
+
+    /** Ultra-light GPU Ken Burns slow zoom/pan on photo wallpapers while in standby mode. */
+    private val kenBurnsRunnable = object : Runnable {
+        override fun run() {
+            if (!clean || !resumed || isDestroyed) return
+            val wall = findViewById<View>(R.id.wallpaper) ?: return
+            val choice = currentWallpaper()
+            if (choice.startsWith("plain:") || choice.startsWith("video:")) return
+            val (scale, txDp, tyDp) = when (kenBurnsStep++ % 4) {
+                0 -> Triple(1.07f, 10, -6)
+                1 -> Triple(1.03f, -8, 5)
+                2 -> Triple(1.08f, -6, -8)
+                else -> Triple(1.0f, 0, 0)
+            }
+            wall.animate()
+                .scaleX(scale)
+                .scaleY(scale)
+                .translationX(dp(txDp).toFloat())
+                .translationY(dp(tyDp).toFloat())
+                .setDuration(24_000L)
+                .setInterpolator(smoothBreathInterpolator)
+                .start()
+            ui.postDelayed(this, 24_500L)
+        }
+    }
+
+    private fun updateWeatherPill(animate: Boolean = true) {
+        val v = findViewById<TextView>(R.id.weather) ?: return
+        val pill = v.background as? GradientDrawable ?: return
+        if (v.isFocused || clean) {
+            val useLightPill = dark || clean || glassActive()
+            pill.setColor(if (useLightPill) 0x33FFFFFF.toInt() else 0x22000000.toInt())
+            pill.setStroke(dp(1), if (useLightPill) 0x66FFFFFF.toInt() else 0x4D000000.toInt())
+        } else {
+            pill.setColor(Color.TRANSPARENT)
+            pill.setStroke(0, Color.TRANSPARENT)
+        }
+        val scale = if (v.isFocused && !clean) 1.05f else 1f
+        if (animate) {
+            v.animate().scaleX(scale).scaleY(scale).setDuration(160).setInterpolator(DECELERATE).start()
+        } else {
+            v.animate().cancel()
+            v.scaleX = scale
+            v.scaleY = scale
+        }
+    }
+
     /** Photo-frame mode: the rows and icons fade away, leaving the wallpaper, the clock and the weather centered on screen. */
     private fun setClean(on: Boolean, animate: Boolean = true) {
         if (clean == on) return
         clean = on
         if (on) hideYtDrawerIfNeeded()
+        updateWeatherPill(animate)
+        applyWallpaperScrim(animateStandby = animate)
         val views = listOf(R.id.inputsContainer, R.id.homeVerticalScroll, R.id.topMenuToggle, R.id.wifi, R.id.sourcesButton,
             R.id.allAppsButton, R.id.systemSettings, R.id.launcherSettings, R.id.powerButton, R.id.featured,
             R.id.badgeGamepad, R.id.badgeAudio).mapNotNull { findViewById<View>(it) }
@@ -1277,6 +1356,17 @@ class MainActivity : Activity() {
                 val dTx = screenCenterX - dBaseX
                 val dTy = targetDateCenterY - dBaseY
 
+                cleanClockTx = cTx
+                cleanClockTy = cTy
+                cleanDateTx = dTx
+                cleanDateTy = dTy
+                pixelShiftStep = 0
+                kenBurnsStep = 0
+                ui.removeCallbacks(pixelShiftRunnable)
+                ui.postDelayed(pixelShiftRunnable, 45_000L)
+                ui.removeCallbacks(kenBurnsRunnable)
+                ui.post(kenBurnsRunnable)
+
                 if (animate) {
                     clock.animate().translationX(cTx).translationY(cTy).scaleX(clockScale).scaleY(clockScale)
                         .setDuration(420).setInterpolator(DECELERATE).start()
@@ -1289,6 +1379,17 @@ class MainActivity : Activity() {
                     dateLine.translationX = dTx; dateLine.translationY = dTy; dateLine.scaleX = dateScale; dateLine.scaleY = dateScale
                 }
             } else {
+                ui.removeCallbacks(pixelShiftRunnable)
+                ui.removeCallbacks(kenBurnsRunnable)
+                findViewById<View>(R.id.wallpaper)?.let { wall ->
+                    if (animate) {
+                        wall.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f)
+                            .setDuration(420).setInterpolator(DECELERATE).start()
+                    } else {
+                        wall.animate().cancel()
+                        wall.scaleX = 1f; wall.scaleY = 1f; wall.translationX = 0f; wall.translationY = 0f
+                    }
+                }
                 if (animate) {
                     clock.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
                         .setDuration(320).setInterpolator(DECELERATE).start()
@@ -2149,24 +2250,44 @@ class MainActivity : Activity() {
         set(watchRow, inWatch)
     }
 
-    private fun applyWallpaperScrim() {
+    private fun applyWallpaperScrim(animateStandby: Boolean = false) {
         val scrim = findViewById<View>(R.id.wallpaperScrim) ?: return
         val dimPct = prefs.getInt("wp_dim", 15)
-        if (dimPct <= 0) {
-            scrim.background = null
-            return
+        fun makeNormalDrawable(): android.graphics.drawable.Drawable {
+            if (dimPct <= 0) return ColorDrawable(Color.TRANSPARENT)
+            val topAlpha = minOf(255, (dimPct * 1.65f * 2.55f).toInt())
+            val midAlpha = minOf(255, (dimPct * 0.90f * 2.55f).toInt())
+            val botAlpha = minOf(255, (dimPct * 1.45f * 2.55f).toInt())
+            return GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    Color.argb(topAlpha, 0, 0, 0),
+                    Color.argb(midAlpha, 0, 0, 0),
+                    Color.argb(botAlpha, 0, 0, 0)
+                )
+            ).apply { setDither(true) }
         }
-        val topAlpha = minOf(255, (dimPct * 1.65f * 2.55f).toInt())
-        val midAlpha = minOf(255, (dimPct * 0.90f * 2.55f).toInt())
-        val botAlpha = minOf(255, (dimPct * 1.45f * 2.55f).toInt())
-        scrim.background = GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(
-                Color.argb(topAlpha, 0, 0, 0),
-                Color.argb(midAlpha, 0, 0, 0),
-                Color.argb(botAlpha, 0, 0, 0)
-            )
-        ).apply { setDither(true) }
+        fun makeStandbyDrawable(): android.graphics.drawable.Drawable {
+            val base = makeNormalDrawable()
+            val cinemaVeil = ColorDrawable(0x2E000000)
+            val centerHalo = GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = dp(320).toFloat()
+                setGradientCenter(0.5f, 0.5f)
+                colors = intArrayOf(0x66000000, 0x29000000, Color.TRANSPARENT)
+                setDither(true)
+            }
+            return LayerDrawable(arrayOf(base, cinemaVeil, centerHalo))
+        }
+        if (animateStandby) {
+            val from = if (clean) makeNormalDrawable() else makeStandbyDrawable()
+            val to = if (clean) makeStandbyDrawable() else makeNormalDrawable()
+            val trans = TransitionDrawable(arrayOf(from, to)).apply { isCrossFadeEnabled = true }
+            scrim.background = trans
+            trans.startTransition(if (clean) 420 else 320)
+        } else {
+            scrim.background = if (clean) makeStandbyDrawable() else makeNormalDrawable()
+        }
     }
 
     private fun wallpaperAdjustmentSummary(): String {

@@ -1223,13 +1223,9 @@ class MainActivity : Activity() {
     private var kenBurnsStep = 0
     private val smoothBreathInterpolator = android.view.animation.AccelerateDecelerateInterpolator()
 
-    /** Custom zero-bloat drawable rendering the cinema dim veil, soft radial halo, and frosted Glass Capsule in standby. */
+    /** Custom zero-bloat drawable rendering a gentle cinema dim veil and a borderless radial shadow behind the clock. */
     private val standbyOverlayDrawable = object : android.graphics.drawable.Drawable() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG)
-        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-        private val blurPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        private val rect = RectF()
-        private val clipPath = Path()
         private val haloMatrix = android.graphics.Matrix()
 
         override fun draw(canvas: Canvas) {
@@ -1239,22 +1235,21 @@ class MainActivity : Activity() {
             val h = bounds.height().toFloat()
             if (w <= 0f || h <= 0f) return
 
-            // 1. Cinema dimming veil across the whole screen (~38% dark at full standby)
-            canvas.drawColor(Color.argb((p * 96).toInt(), 0, 0, 0))
+            // 1. Subtle cinema dimming veil across the whole screen (~22% dark at full standby)
+            canvas.drawColor(Color.argb((p * 56).toInt(), 0, 0, 0))
 
+            // 2. Soft borderless elliptical radial shadow behind the clock & weather for readability
             val cx = w / 2f + cleanShiftX
             val cy = h / 2f + cleanShiftY
             val capW = if (cleanCapsuleW > 0f) cleanCapsuleW else dp(440).toFloat()
             val capH = if (cleanCapsuleH > 0f) cleanCapsuleH else dp(170).toFloat()
-
-            // 2. Wide elliptical radial dark halo behind the capsule for extra contrast over bright lights
-            val haloRx = capW * 0.85f
-            val haloRy = capH * 1.15f
+            val haloRx = capW * 0.78f
+            val haloRy = capH * 1.05f
             val shader = android.graphics.RadialGradient(
                 0f, 0f, 1f,
                 intArrayOf(
-                    Color.argb((p * 150).toInt(), 0, 0, 0),
-                    Color.argb((p * 70).toInt(), 0, 0, 0),
+                    Color.argb((p * 115).toInt(), 0, 0, 0),
+                    Color.argb((p * 50).toInt(), 0, 0, 0),
                     Color.TRANSPARENT
                 ),
                 floatArrayOf(0f, 0.55f, 1f),
@@ -1267,45 +1262,6 @@ class MainActivity : Activity() {
             paint.shader = shader
             canvas.drawRect(0f, 0f, w, h, paint)
             paint.shader = null
-
-            // 3. Floating Glass Capsule around the centered Clock + Date + Weather block
-            val scale = 0.92f + 0.08f * p
-            val cw = capW * scale
-            val ch = capH * scale
-            rect.set(cx - cw / 2f, cy - ch / 2f, cx + cw / 2f, cy + ch / 2f)
-            val rad = dp(32).toFloat()
-
-            val blurBmp = surfaceBlur
-            if (blurBmp != null && !blurBmp.isRecycled) {
-                canvas.save()
-                clipPath.reset()
-                clipPath.addRoundRect(rect, rad, rad, Path.Direction.CW)
-                canvas.clipPath(clipPath)
-                blurPaint.alpha = (p * 235).toInt()
-                canvas.drawBitmap(blurBmp, null, bounds, blurPaint)
-                canvas.restore()
-            }
-
-            // Smoked glass tint + subtle vertical sheen
-            paint.shader = android.graphics.LinearGradient(
-                0f, rect.top, 0f, rect.bottom,
-                Color.argb((p * 115).toInt(), 18, 22, 30),
-                Color.argb((p * 155).toInt(), 8, 10, 15),
-                android.graphics.Shader.TileMode.CLAMP
-            )
-            canvas.drawRoundRect(rect, rad, rad, paint)
-            paint.shader = null
-
-            // Crisp specular glass rim
-            strokePaint.strokeWidth = dp(1).toFloat() * 1.2f
-            strokePaint.shader = android.graphics.LinearGradient(
-                0f, rect.top, 0f, rect.bottom,
-                Color.argb((p * 120).toInt(), 255, 255, 255),
-                Color.argb((p * 40).toInt(), 255, 255, 255),
-                android.graphics.Shader.TileMode.CLAMP
-            )
-            canvas.drawRoundRect(rect, rad, rad, strokePaint)
-            strokePaint.shader = null
         }
 
         override fun setAlpha(alpha: Int) {}

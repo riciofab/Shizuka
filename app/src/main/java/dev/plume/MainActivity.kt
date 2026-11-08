@@ -1172,14 +1172,19 @@ class MainActivity : Activity() {
             weatherWidgetView != null -> hideExpandedWeather()
             settingsScrim.visibility == View.VISIBLE -> pageBack?.invoke() ?: closeLauncherSettings()
             allApps.visibility == View.VISIBLE -> closeAllApps()
-            currentFocus?.getTag(R.id.watchScroll) == "yt_drawer" || (activeYtRow != null && (currentFocus?.parent as? View)?.parent === activeYtRow) -> {
-                val parentRow = activeYtParentRow
-                val ytTile = (0 until (parentRow?.childCount ?: 0))
-                    .mapNotNull { parentRow?.getChildAt(it) }
-                    .firstOrNull { it.tag == currentYtPkg }
-                    ?: parentRow?.getChildAt(1)
-                    ?: parentRow?.getChildAt(0)
-                ytTile?.requestFocus()
+            activeYtDrawer?.visibility == View.VISIBLE -> {
+                val inDrawer = currentFocus?.getTag(R.id.watchScroll) == "yt_drawer" ||
+                    (activeYtRow != null && (currentFocus?.parent as? View)?.parent === activeYtRow)
+                if (inDrawer) {
+                    val parentRow = activeYtParentRow
+                    val ytTile = (0 until (parentRow?.childCount ?: 0))
+                        .mapNotNull { parentRow?.getChildAt(it) }
+                        .firstOrNull { it.tag == currentYtPkg }
+                        ?: parentRow?.getChildAt(1)
+                        ?: parentRow?.getChildAt(0)
+                    ytTile?.requestFocus()
+                }
+                hideYtDrawerIfNeeded()
             }
             topBarExpanded -> collapseTopBar(focusToggle = true)
             !editing && wallPreview == null -> setClean(true) // photo-frame mode: just the wallpaper, the clock and the weather
@@ -4911,11 +4916,12 @@ class MainActivity : Activity() {
                 clipToPadding = false
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
-                setPadding(dp(16), dp(16), dp(16), dp(20))
+                setPadding(dp(16), dp(14), dp(16), dp(16))
                 layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                     marginStart = dp(-16)
                     marginEnd = dp(-16)
-                    topMargin = dp(-4)
+                    topMargin = dp(-18)
+                    bottomMargin = dp(-8)
                 }
             }
             val ytDrawerRow = LinearLayout(this).apply {

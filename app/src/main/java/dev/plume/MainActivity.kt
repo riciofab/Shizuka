@@ -3650,7 +3650,7 @@ class MainActivity : Activity() {
             Triple(R.string.section_style, "${rows[R.string.theme]!!.second} · ${getString(glassName())}",
                 listOf(R.string.theme, R.string.glass, R.string.app_animations, R.string.tile_radius, R.string.glow_style, R.string.focus_dimming)),
             Triple(R.string.section_app_row, "${rows[R.string.apps_in_row]!!.second} · ${rows[R.string.row_position]!!.second}",
-                listOf(R.string.edit_apps_row, R.string.apps_in_row, R.string.categories, R.string.yt_drawer_channels, R.string.yt_drawer_delay, R.string.sort_apps, R.string.icon_style, R.string.row_size, R.string.row_spacing, R.string.app_names, R.string.row_position)),
+                listOf(R.string.edit_apps_row, R.string.apps_in_row, R.string.categories, R.string.yt_drawer_channels, R.string.sort_apps, R.string.icon_style, R.string.row_size, R.string.row_spacing, R.string.app_names, R.string.row_position)),
             // "When hidden" only means something once the row can hide.
             Triple(R.string.bottom_row, "${rowName()} · ${rows[R.string.show_row]!!.second}", listOfNotNull(R.string.show_row, R.string.apps_when_hidden.takeIf { rowShow() != "always" },
                 R.string.cw_vertical_position, R.string.row_name, R.string.show_icons, R.string.cw_apps, R.string.cw_channels, R.string.restore_hidden)),
@@ -5001,15 +5001,15 @@ class MainActivity : Activity() {
                         }
                         if (activeYtDrawer === ytDrawerScroller && ytDrawerScroller.visibility == View.VISIBLE && currentYtPkg == a.pkg) {
                             showYtDrawer(a.pkg, ytDrawerScroller, ytDrawerRow, thisRow)
-                        } else if (!a.pkg.startsWith(HDMI)) {
+                        } else if (!a.pkg.startsWith(HDMI) && ytDrawerEnabled(a.pkg)) {
                             val task = Runnable {
                                 pendingYtDrawerShow = null
-                                if (currentFocus === v && v.isAttachedToWindow && feedForApp(a.pkg).isNotEmpty()) {
+                                if (currentFocus === v && v.isAttachedToWindow && ytDrawerEnabled(a.pkg) && feedForApp(a.pkg).isNotEmpty()) {
                                     showYtDrawer(a.pkg, ytDrawerScroller, ytDrawerRow, thisRow)
                                 }
                             }
                             pendingYtDrawerShow = task
-                            ui.postDelayed(task, ytDrawerDelayMs())
+                            ui.postDelayed(task, ytDrawerDelayMs(a.pkg))
                         }
                     } else {
                         pendingYtDrawerShow?.let { ui.removeCallbacks(it) }
@@ -7634,10 +7634,11 @@ class MainActivity : Activity() {
     }
 
     private fun feedForApp(pkg: String): List<Prog> {
+        if (!ytDrawerEnabled(pkg)) return emptyList()
         val exact = youtubeFeed.filter { it.pkg == pkg }
-        if (exact.isNotEmpty()) return exact.take(10)
+        if (exact.isNotEmpty()) return exact.take(12)
         if (isYoutubeOrSmartTube(pkg)) {
-            return youtubeFeed.filter { isYoutubeOrSmartTube(it.pkg) }.take(10)
+            return youtubeFeed.filter { isYoutubeOrSmartTube(it.pkg) }.take(12)
         }
         return emptyList()
     }
@@ -7888,13 +7889,46 @@ class MainActivity : Activity() {
         return result
     }
 
-    private fun ytDrawerDelayMs(): Long = prefs.getInt("yt_drawer_delay", 1500).coerceIn(500, 3000).toLong()
+    private val DRAWER_SIZES = linkedMapOf(
+        "small" to R.string.drawer_size_small,
+        "medium" to R.string.drawer_size_medium,
+        "large" to R.string.drawer_size_large
+    )
+
+    private fun ytDrawerEnabled(pkg: String?): Boolean =
+        if (pkg == null) true else prefs.getBoolean("yt_drawer_on_$pkg", true)
+
+    private fun ytDrawerSize(pkg: String?): String {
+        if (pkg == null) return "large"
+        val defaultSize = if (isOqee(pkg)) "small" else "large"
+        return prefs.getString("yt_drawer_size_$pkg", defaultSize)?.takeIf { it in DRAWER_SIZES } ?: defaultSize
+    }
+
+    private fun ytDrawerDelayMs(pkg: String? = null): Long {
+        val fallback = prefs.getInt("yt_drawer_delay", 1500).coerceIn(500, 3000)
+        if (pkg == null) return fallback.toLong()
+        return prefs.getInt("yt_drawer_delay_$pkg", fallback).coerceIn(500, 3000).toLong()
+    }
 
     private fun formatDrawerDelay(ms: Int): String =
         String.format(java.util.Locale.US, "%.1f s", ms.coerceIn(500, 3000) / 1000f)
 
-    private fun buildDrawerDelayGauge(): View {
-        var curMs = prefs.getInt("yt_drawer_delay", 1500).coerceIn(500, 3000)
+    private fun refreshOpenDrawerIfNeeded(pkg: String) {
+        if (currentYtPkg != pkg) return
+        val scroller = activeYtDrawer ?: return
+        val row = activeYtRow ?: return
+        val parentRow = activeYtParentRow ?: return
+        if (!ytDrawerEnabled(pkg)) {
+            hideYtDrawerIfNeeded()
+        } else if (scroller.visibility == View.VISIBLE) {
+            row.removeAllViews()
+            showYtDrawer(pkg, scroller, row, parentRow)
+        }
+    }
+
+    private fun buildDrawerDelayGauge(forPkg: String? = null): View {
+        val prefKey = if (forPkg != null) "yt_drawer_delay_$forPkg" else "yt_drawer_delay"
+        var curMs = ytDrawerDelayMs(forPkg).toInt()
         val titleView = label(getString(R.string.yt_drawer_delay), 15f).apply {
             setTextColor(restInk())
             panelShadow()
@@ -7914,7 +7948,7 @@ class MainActivity : Activity() {
         val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 2500
             progress = curMs - 500
-            progressDrawable = progressBarDrawable(focusInk())
+            progressDrawable = progressBarDrawable(focusInk(), forPkg)
         }
         val gaugeLine = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -7935,7 +7969,7 @@ class MainActivity : Activity() {
             addView(gaugeLine)
             val stepFn: (Int) -> Unit = { d ->
                 curMs = (curMs + d * 100).coerceIn(500, 3000)
-                prefs.edit().putInt("yt_drawer_delay", curMs).apply()
+                prefs.edit().putInt(prefKey, curMs).apply()
                 pb.progress = curMs - 500
                 valueView.text = "‹ ${formatDrawerDelay(curMs)} ›"
             }
@@ -7944,7 +7978,7 @@ class MainActivity : Activity() {
                 // Cycle by +0.5 s on OK click (wrapping from 3.0s back to 0.5s)
                 val next = if (curMs >= 3000) 500 else (curMs + 500).coerceAtMost(3000)
                 curMs = next
-                prefs.edit().putInt("yt_drawer_delay", curMs).apply()
+                prefs.edit().putInt(prefKey, curMs).apply()
                 pb.progress = curMs - 500
                 valueView.text = "‹ ${formatDrawerDelay(curMs)} ›"
             }
@@ -7969,25 +8003,48 @@ class MainActivity : Activity() {
             emptyMap()
         }
         val watchNextPkgs = watchNextCounts.keys
-        val entries = mutableListOf<Triple<Long, String, String>>() // (channelId or -1L for WATCH_NEXT, pkg, channelName)
+        val labelMap = apps.associate { it.pkg to it.label }
+        fun appName(p: String) = labelMap[p] ?: try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+        } catch (_: PackageManager.NameNotFoundException) { p }
 
-        if (forPkg != null) {
-            if (!isYoutubeOrSmartTube(forPkg) || watchNextPkgs.contains(forPkg)) {
-                entries.add(Triple(-1L, forPkg, WATCH_NEXT))
-            }
-            allChannels.filter { it.second == forPkg }.forEach { (id, p, n) ->
-                entries.add(Triple(id, p, n))
-            }
-        } else {
-            val candidatePkgs = (watchSources().map { it.pkg } + allChannels.map { it.second } + watchNextPkgs).distinct()
-            for (p in candidatePkgs) {
-                if (!isYoutubeOrSmartTube(p)) {
-                    entries.add(Triple(-1L, p, WATCH_NEXT))
+        // Global view: list each drawer-capable app so each app has its own dedicated drawer settings page
+        if (forPkg == null) {
+            val candidatePkgs = (watchSources().map { it.pkg } + allChannels.map { it.second } + watchNextPkgs)
+                .distinct()
+                .filter { p ->
+                    val hasCh = allChannels.any { it.second == p }
+                    val hasWn = !isYoutubeOrSmartTube(p) || watchNextPkgs.contains(p)
+                    hasCh || hasWn
                 }
-                allChannels.filter { it.second == p }.forEach { (id, _, n) ->
-                    entries.add(Triple(id, p, n))
+                .sortedBy { appName(it).lowercase() }
+
+            if (candidatePkgs.isEmpty()) {
+                toast("Aucun canal trouvé. Ouvrez l'application pour charger les flux.")
+                return
+            }
+
+            val appRowsList = candidatePkgs.mapIndexed { idx, p ->
+                val enabled = ytDrawerEnabled(p)
+                val sizeLabel = getString(DRAWER_SIZES.getValue(ytDrawerSize(p)))
+                val delayLabel = formatDrawerDelay(ytDrawerDelayMs(p).toInt())
+                val summary = if (!enabled) "${getString(R.string.off)}  ›" else "$sizeLabel · $delayLabel  ›"
+                page(appName(p), summary) {
+                    pickYtChannels(forPkg = p, fromAppMenu = false, focus = 0)
                 }
             }
+            showPage(getString(R.string.yt_drawer_channels), appRowsList, focus = focus.coerceAtLeast(0), crumb = getString(R.string.section_app_row)) {
+                renderSettings(R.string.yt_drawer_channels)
+            }
+            return
+        }
+
+        val entries = mutableListOf<Triple<Long, String, String>>() // (channelId or -1L for WATCH_NEXT, pkg, channelName)
+        if (!isYoutubeOrSmartTube(forPkg) || watchNextPkgs.contains(forPkg)) {
+            entries.add(Triple(-1L, forPkg, WATCH_NEXT))
+        }
+        allChannels.filter { it.second == forPkg }.forEach { (id, p, n) ->
+            entries.add(Triple(id, p, n))
         }
 
         if (entries.isEmpty()) {
@@ -7996,20 +8053,35 @@ class MainActivity : Activity() {
             return
         }
 
-        val labelMap = apps.associate { it.pkg to it.label }
-        fun appName(p: String) = labelMap[p] ?: try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
-        } catch (_: PackageManager.NameNotFoundException) { p }
+        val pageTitle = "${appName(forPkg)} · ${getString(R.string.yt_drawer_feed)}"
+        val enabledNow = ytDrawerEnabled(forPkg)
+        val sizeKeys = DRAWER_SIZES.keys.toList()
+        val curSize = ytDrawerSize(forPkg)
 
-        val pageTitle = if (forPkg != null) "${appName(forPkg)} · ${getString(R.string.yt_drawer_feed)}" else getString(R.string.yt_drawer_channels)
-        val rows = entries.mapIndexed { i, (id, p, n) ->
+        val enableRow = page(getString(R.string.yt_drawer_enabled), toggle(enabledNow)) {
+            val next = !ytDrawerEnabled(forPkg)
+            prefs.edit().putBoolean("yt_drawer_on_$forPkg", next).apply()
+            refreshOpenDrawerIfNeeded(forPkg)
+            pickYtChannels(forPkg, fromAppMenu, focus = 0)
+        }
+
+        val sizeStepFn: (Int) -> Unit = { d ->
+            val nextSize = sizeKeys.step(ytDrawerSize(forPkg), d)
+            prefs.edit().putString("yt_drawer_size_$forPkg", nextSize).apply()
+            refreshOpenDrawerIfNeeded(forPkg)
+            pickYtChannels(forPkg, fromAppMenu, focus = 1)
+        }
+        val sizeRow = page(getString(R.string.yt_drawer_size), "‹ ${getString(DRAWER_SIZES.getValue(curSize))} ›") {
+            sizeStepFn(1)
+        }
+
+        val channelRows = entries.mapIndexed { i, (id, p, n) ->
             val appLabel = appName(p)
             val displayCh = when {
                 n == WATCH_NEXT -> getString(R.string.continue_watching)
                 n.equals(appLabel, ignoreCase = true) -> "Catalogue / Recommandations"
                 else -> n
             }
-            val title = if (forPkg != null) displayCh else "$appLabel · $displayCh"
             val count = if (n == WATCH_NEXT) {
                 watchNextCounts[p] ?: 0
             } else {
@@ -8020,7 +8092,7 @@ class MainActivity : Activity() {
             }
             val isOn = ytChannelOn(p, n)
             val state = "${getString(if (isOn) R.string.on else R.string.off)} ($count)"
-            page(title, state) {
+            page(displayCh, state) {
                 val key = channelKey(p, n)
                 val nowOn = !ytChannelOn(p, n)
                 val onSet = (prefs.getStringSet("yt_ch_on", emptySet()) ?: emptySet()).toMutableSet()
@@ -8035,12 +8107,15 @@ class MainActivity : Activity() {
                 prefs.edit().putStringSet("yt_ch_on", onSet).putStringSet("yt_ch_off", offSet).apply()
                 youtubeFeedKey = null
                 refreshWatchNext()
-                pickYtChannels(forPkg, fromAppMenu, i)
+                pickYtChannels(forPkg, fromAppMenu, i + 2)
             }
         }
-        val gaugeView = buildDrawerDelayGauge()
-        showPage(pageTitle, rows, focus = focus.coerceAtLeast(0), top = gaugeView, crumb = if (fromAppMenu) null else getString(R.string.section_app_row)) {
-            if (fromAppMenu) closeLauncherSettings() else renderSettings(R.string.yt_drawer_channels)
+
+        val rows = listOf(enableRow, sizeRow) + channelRows
+        val rowSteps: List<((Int) -> Unit)?> = listOf(null, sizeStepFn) + List(channelRows.size) { null }
+        val gaugeView = buildDrawerDelayGauge(forPkg)
+        showPage(pageTitle, rows, focus = focus.coerceAtLeast(0), top = gaugeView, steps = rowSteps, crumb = if (fromAppMenu) null else getString(R.string.yt_drawer_channels)) {
+            if (fromAppMenu) closeLauncherSettings() else pickYtChannels(forPkg = null, fromAppMenu = false)
         }
         if (settingsList.childCount >= 2) {
             val firstRow = settingsList.getChildAt(1)
@@ -8061,17 +8136,23 @@ class MainActivity : Activity() {
         }
 
         ytDrawerAnim?.cancel()
-        val wasFullyOpen = drawerScroller.visibility == View.VISIBLE && drawerScroller.height >= dp(100)
+        val sizeKey = ytDrawerSize(pkg)
+        val wasFullyOpen = drawerScroller.visibility == View.VISIBLE && drawerScroller.height >= dp(80)
         val isNewPkg = currentYtPkg != pkg
 
         if (isNewPkg || drawerRow.childCount == 0) {
             drawerRow.removeAllViews()
             items.forEach { prog ->
-                drawerRow.addView(ytPreviewCard(prog))
+                drawerRow.addView(ytPreviewCard(prog, sizeKey))
             }
         }
+        val maxInline = when (sizeKey) {
+            "small" -> 6
+            "medium" -> 5
+            else -> 4
+        }
         (drawerRow.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-            lp.gravity = if (items.size > 4) Gravity.START else ROW_ALIGN[rowAlign()]!!.second
+            lp.gravity = if (items.size > maxInline) Gravity.START else ROW_ALIGN[rowAlign()]!!.second
             drawerRow.layoutParams = lp
         }
 
@@ -8081,6 +8162,8 @@ class MainActivity : Activity() {
         currentYtPkg = pkg
 
         if (wasFullyOpen) {
+            drawerScroller.layoutParams.height = WRAP_CONTENT
+            drawerScroller.requestLayout()
             if (isNewPkg) {
                 for (idx in 0 until drawerRow.childCount) {
                     val cardCol = drawerRow.getChildAt(idx)
@@ -8101,7 +8184,12 @@ class MainActivity : Activity() {
                 View.MeasureSpec.makeMeasureSpec(resources.displayMetrics.widthPixels, View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
             )
-            val targetH = drawerScroller.measuredHeight.coerceAtLeast(dp(156))
+            val minH = when (sizeKey) {
+                "small" -> dp(108)
+                "medium" -> dp(130)
+                else -> dp(156)
+            }
+            val targetH = drawerScroller.measuredHeight.coerceAtLeast(minH)
             val startH = maxOf(drawerScroller.height, 0)
             drawerScroller.layoutParams.height = startH
             drawerScroller.alpha = if (targetH > 0) startH.toFloat() / targetH else 0f
@@ -8557,9 +8645,22 @@ class MainActivity : Activity() {
         return col
     }
 
-    private fun ytPreviewCard(p: Prog): View {
-        val w = dp(184)
-        val h = dp(103)
+    private fun ytPreviewCard(p: Prog, sizeKey: String = ytDrawerSize(p.pkg)): View {
+        val (w, h) = when (sizeKey) {
+            "small" -> dp(116) to dp(65)
+            "medium" -> dp(148) to dp(83)
+            else -> dp(184) to dp(103)
+        }
+        val titleSp = when (sizeKey) {
+            "small" -> 11f
+            "medium" -> 11.5f
+            else -> 12f
+        }
+        val subSp = when (sizeKey) {
+            "small" -> 10f
+            "medium" -> 10.5f
+            else -> 11f
+        }
         val gap = dp(GRID_GAP)
 
         val col = LinearLayout(this).apply {
@@ -8599,12 +8700,12 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = p.title
-            textSize = 12f
+            textSize = titleSp
             maxLines = 1
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.MARQUEE
             marqueeRepeatLimit = -1
-            setPadding(dp(2), dp(6), dp(2), 0)
+            setPadding(dp(2), dp(5), dp(2), 0)
             ink(this, appsInk)
         }
 
@@ -8623,7 +8724,7 @@ class MainActivity : Activity() {
         col.addView(frame, LinearLayout.LayoutParams(w, h))
         col.addView(title, LinearLayout.LayoutParams(w, WRAP_CONTENT))
         if (p.sub.isNotEmpty()) {
-            val subView = label(p.sub, 11f).apply {
+            val subView = label(p.sub, subSp).apply {
                 ink(this, appsInk)
                 alpha = 0.75f
                 setPadding(dp(2), dp(1), dp(2), 0)

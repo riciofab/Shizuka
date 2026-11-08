@@ -423,4 +423,9 @@
     <string name="yt_drawer_feed">Flux du tiroir</string>
     <string name="yt_drawer_delay">Délai d\'affichage du tiroir</string>
     <string name="help_yt_drawer_delay">Temps d\'attente sur une icône avant l\'ouverture du tiroir de vignettes (de 0,5 s à 3,0 s).</string>
+    <string name="yt_drawer_enabled">Afficher le tiroir</string>
+    <string name="yt_drawer_size">Taille des vignettes</string>
+    <string name="drawer_size_small">Petite</string>
+    <string name="drawer_size_medium">Moyenne</string>
+    <string name="drawer_size_large">Grande</string>
 </resources>

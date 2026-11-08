@@ -514,4 +514,9 @@
     <string name="yt_drawer_feed">Drawer feed</string>
     <string name="yt_drawer_delay">Drawer delay</string>
     <string name="help_yt_drawer_delay">How long to stay on an app icon before its video drawer opens (0.5 s to 3.0 s).</string>
+    <string name="yt_drawer_enabled">Show drawer</string>
+    <string name="yt_drawer_size">Thumbnail size</string>
+    <string name="drawer_size_small">Small</string>
+    <string name="drawer_size_medium">Medium</string>
+    <string name="drawer_size_large">Large</string>
 </resources>

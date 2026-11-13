@@ -3,6 +3,17 @@
 The English release notes. The app shows them as "What's new" on every TV that is not set to French;
 [CHANGELOG.md](CHANGELOG.md) holds the French ones. Each release needs its section in both files.
 
+## 1.5.0
+
+- **Organise the home screen from your phone.** In **Settings → Apps row → Categories → Organize from your phone**, scan the QR code: type your categories' names, reorder them and their apps, and move an app from one category to another. The home screen updates as soon as you save.
+- **Recent row.** The apps you opened last, first on the home screen. Turn it on in **Settings → Apps row → Categories → Recent apps row**.
+- **Drawers in the right order.** App drawers and **Continue Watching** show what you watched last first.
+- **Shizuka speaks your language.** French is now complete, Portuguese (Portugal) and Japanese are new, and the release notes follow the TV's language. Spanish, Italian, Brazilian Portuguese, Arabic and Turkish were too incomplete and give way to English.
+- **A reliable inputs bar.** It follows the TV's HDMI ports: an input plugged in later shows up by itself, **Add an input** offers the TV's ports, and icons are guessed better.
+- **Photo frame at night.** Turn on **Dim the photo frame at night** for a much darker photo frame from sunset to sunrise.
+- **Your TV at a glance.** **Updates & About** shows the TV's model, its Android version, its network address and its free storage.
+- **Fixes.** The QR code for sending from a phone shows whole, moving an app saves its order to the right category, and the animated glow settles smoothly.
+
 ## 1.4.1
 
 - **Hold Back for photo frame.** A short press on **Back** on the home screen no longer starts photo-frame mode: hold **Back** to show it.

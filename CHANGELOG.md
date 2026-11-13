@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+
+- **Organisez l'accueil depuis votre téléphone.** Dans **Paramètres → Ligne d'applis → Catégories → Organiser depuis le téléphone**, scannez le QR code : renommez vos catégories au clavier, changez leur ordre et celui des applis, déplacez une appli d'une catégorie à l'autre. L'accueil se met à jour dès l'enregistrement.
+- **Ligne « Récents ».** Les dernières applis ouvertes, en tête de l'accueil. À activer dans **Paramètres → Ligne d'applis → Catégories → Ligne des applis récentes**.
+- **Tiroirs dans le bon ordre.** Les tiroirs d'applis et la ligne **Reprendre la lecture** affichent en premier ce que vous avez regardé en dernier.
+- **Shizuka parle votre langue.** Le français est maintenant complet, le portugais (Portugal) et le japonais font leur entrée, et les notes de version suivent la langue de la TV. L'espagnol, l'italien, le portugais du Brésil, l'arabe et le turc, trop incomplets, laissent place à l'anglais.
+- **Barre des entrées fiable.** Elle suit les ports HDMI de la TV : une entrée branchée plus tard apparaît toute seule, **Ajouter une entrée** propose les ports de la TV, et les icônes sont mieux devinées.
+- **Cadre photo de nuit.** Activez **Assombrir le cadre photo la nuit** pour un cadre photo bien plus sombre du coucher au lever du soleil.
+- **Votre TV en un coup d'œil.** **Mises à jour & À propos** affiche le modèle de la TV, sa version d'Android, son adresse réseau et le stockage libre.
+- **Corrections.** Le QR code d'envoi depuis le téléphone s'affiche en entier, déplacer une appli enregistre l'ordre dans la bonne catégorie, et la lueur animée se fige en douceur.
+
 ## 1.4.1
 
 - **Veille par appui long sur Retour.** Un appui court sur **Retour** à l'accueil ne lance plus le mode veille : maintenez **Retour** pour l'afficher.

@@ -6,7 +6,7 @@
 - **Diaporama automatique en veille.** Nouveau réglage permettant de faire défiler automatiquement vos fonds d'écran avec transition douce en fondu enchaîné pendant le mode veille (5, 10 ou 30 min).
 - **Pastille « En cours de lecture » en veille.** Affichage discret du titre et de l'artiste de la musique en cours sous l'horloge en mode veille, avec suivi du décalage OLED.
 - **Progression du téléchargement OTA.** Affichage du pourcentage de progression en temps réel lors du téléchargement d'une mise à jour.
-- **Optimisation de la détection HDMI & taille APK.** Détection strictly matérielle des ports HDMI sans entrées factices et compilation optimisée R8 (APK allégé à moins de 1 Mo).
+- **Optimisation de la détection HDMI & taille APK.** Détection strictement matérielle des ports HDMI sans entrées factices et compilation optimisée R8 (APK allégé à moins de 1 Mo).
 
 ## 1.3.0
 
@@ -39,11 +39,17 @@
 - **Menu contextuel enrichi.** Masquage direct d'une application depuis son menu d'options (appui long).
 - **Mode Cadre photo automatique.** Mise en veille épurée masquant les tuiles après un délai d'inactivité au choix.
 
-## 1.7.1
+---
+
+# Historique Plume Launcher (projet d'origine)
+
+Versions publiées par [Plume Launcher](https://github.com/aradhyas8/Plume_Launcher) avant le fork. Elles ne sont pas incluses dans les notes « Quoi de neuf » de Shizuka.
+
+## Plume 1.7.1
 
 - **Photo of the day fix.** Plume no longer closes when you select **Photo of the day** before the photo downloads.
 
-## 1.7
+## Plume 1.7
 
 - **A new Plume settings.** Clear sections with new icons. Select **Plume settings → Style → Theme → Wallpaper**, and Plume takes its colours from your wallpaper.
 - **Clear glass.** See more of your wallpaper through tiles and menus. Select **Plume settings → Style → Glass → Clear**. The edges catch the light when you select a tile.
@@ -79,7 +85,7 @@
 - Plume is now available in Brazilian Portuguese.
 - Continue watching no longer shows a season or an episode that is not a number.
 
-## 1.6
+## Plume 1.6
 
 ### Design
 - **Glass.** A frosted-glass blur behind the tiles and menus. Plume blurs the wallpaper behind the tiles, menus, cards and the settings panel. Glass is on after the update. To turn it off, select **Plume settings → Appearance → Glass**.
@@ -107,7 +113,7 @@
 - **Less memory.** Plume no longer runs twice after an update. It also keeps each picture only once.
 - On a Fire TV, an HDMI tile switches to its input. Before, it opened Live TV.
 
-## 1.5
+## Plume 1.5
 
 ### New
 - **Pick your bottom row.** Show any channel from your apps, such as a Stremio library. Select **Plume settings → Bottom row → Channels**. The row takes the channel's name, or a name you set in **Row name**.
@@ -129,7 +135,7 @@
 - If your wallpaper is too big for the memory of your TV, Plume shows the default wallpaper. Before, Plume closed.
 - In **All apps**, the tile in the first or last column is no longer cut off when you select it.
 
-## 1.4
+## Plume 1.4
 
 ### Smaller
 - **12% smaller.** Plume is now 365 KB, down from 413 KB.
@@ -155,7 +161,7 @@
 - After the TV starts, the first app is selected, not the network icon.
 - The hold OK menu is only as wide as its items.
 
-## 1.3
+## Plume 1.3
 
 - You can use a folder of photos as your wallpaper. The folder can be on the TV or on a USB drive. Select **Plume settings → Folder photo changes** to set how often the photo changes.
 - **Photo fade** removes the dark area at the bottom of your photos.
@@ -168,11 +174,11 @@
 - **Remove a photo…** deletes wallpapers that you uploaded.
 - The Home button switch opens the correct settings screen on more TVs.
 
-## 1.2.1
+## Plume 1.2.1
 
 - Fix: with **Icon style → Colour**, some app icons stayed grey until Plume started again.
 
-## 1.2
+## Plume 1.2
 
 - Plume updates itself. It looks for a new version one time each day. Select **Plume settings → Updates** to install it.
 - You can hide apps from the home row. Select **Plume settings → Apps in row**. Hidden apps stay in All apps.
@@ -181,13 +187,13 @@
 - You can add wallpapers from your phone. Select **Add from phone…** in a wallpaper list, then scan the QR code.
 - Fix: green areas no longer show in the sky of wallpapers.
 
-## 1.1
+## Plume 1.1
 
 - The APK is now 0.4 MB. It was 5.1 MB.
 - The Gallery screensaver paintings are now a 4.7 MB download. Select **Plume settings → Screensaver → Gallery** to get them.
 - Plume deletes the paintings when you select a different screensaver.
 - Fix: Plume did not always find its Home button service.
 
-## 1.0
+## Plume 1.0
 
 - First release.

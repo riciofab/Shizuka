@@ -92,30 +92,30 @@ Personnalisez le contour lumineux autour des tuiles sélectionnées avec un aper
 - **3 modes d'animation :** Rotation fluide, Pulsation douce (respiration) ou Statique.
 - **3 épaisseurs de lueur :** Subtile, Standard ou Marquée.
 
-### 🗂️ 2. Gestion des catégories & Lignes d'applications
+### 🗂️ 5. Gestion des catégories & Lignes d'applications
 - Créez des lignes thématiques (Streaming, Vidéos, Jeux, etc.).
 - Réorganisez ou déplacez vos applications facilement d'une ligne à l'autre via un appui long (**OK** maintenu).
 - Choisissez d'afficher vos catégories **au-dessus** ou **en dessous** de la ligne *Reprendre la lecture* (*Continue Watching*).
 - Masquez les titres de catégories si vous préférez une interface ultra-minimaliste.
 - Réglage de l'espacement vertical entre les lignes (du très compact au spacieux).
 
-### 🕰️ 3. Styles d'horloge & météo modernisés
+### 🕰️ 6. Styles d'horloge & météo modernisés
 - **Pixel empilée** : Heures et minutes sur deux lignes superposées imposantes et lisibles.
 - **Apple TV moderne** : Typographie fine, date et météo harmonieuses.
 - Styles originaux conservés : Fin, Gras, Serif.
 - Icônes météo vectorielles adaptées au fond d'écran.
 
-### 🎮 4. Gestion des sources & périphériques
+### 🎮 7. Gestion des sources & périphériques
 - Support d'icônes dédiées dans la barre supérieure ou les lignes : **Freebox Delta**, **PC / Ordinateur**, **Nintendo Switch**, **Wii**, **PlayStation**, **Xbox**, **Apple TV**, **HDMI**.
 - Possibilité d'épingler vos entrées directement parmi vos lignes d'applications.
 
-### 🪟 5. Profondeur 3D & Esthétique
+### 🪟 8. Profondeur 3D & Esthétique
 - Ombre portée matérielle douce et légère élévation 3D (`elevation` + `translationZ`) sur l'élément sélectionné pour une meilleure mise en valeur visuelle.
 - Mode **Mise en valeur de la ligne active** : atténue subtilement les lignes non sélectionnées.
 - Choix de l'arrondi des tuiles : Rectangulaire, Classique, Arrondi, Très arrondi, Pilule.
 - Mode **Cadre photo automatique** : masque l'interface après inactivité (2, 5 ou 10 minutes) pour laisser place au fond d'écran ou aux scènes Aerial Views.
 
-### 📱 6. Menu contextuel enrichi
+### 📱 9. Menu contextuel enrichi
 - Appui long sur n'importe quelle application pour :
   - **Déplacer** (dans la ligne)
   - **Changer de catégorie**

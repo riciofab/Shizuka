@@ -76,6 +76,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.ViewConfiguration
 import android.view.ViewOutlineProvider
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1187,8 +1188,23 @@ class MainActivity : Activity() {
                 hideYtDrawerIfNeeded()
             }
             topBarExpanded -> collapseTopBar(focusToggle = true)
-            !editing && wallPreview == null -> setClean(true) // photo-frame mode: just the wallpaper, the clock and the weather
+            // A short Back on the bare home screen does nothing: photo-frame mode needs Back held (see dispatchKeyEvent).
         }
+    }
+
+    /** Nothing open over the home screen: holding Back here turns on photo-frame mode. */
+    private fun homeBare() = weatherWidgetView == null && settingsScrim.visibility != View.VISIBLE &&
+        allApps.visibility != View.VISIBLE && activeYtDrawer?.visibility != View.VISIBLE && !topBarExpanded &&
+        !editing && wallPreview == null && movingTop == null
+
+    private var backHoldFired = false
+    private var backHoldArmed = false // this Back press started on the bare home screen
+
+    /** Back held on the bare home screen: photo-frame mode, just the wallpaper, the clock and the weather. */
+    private val backHold = Runnable {
+        if (!homeBare() || clean) return@Runnable
+        backHoldFired = true
+        setClean(true)
     }
 
     private var clean = false
@@ -1224,6 +1240,7 @@ class MainActivity : Activity() {
     private var standbyProgress = 0f
     private var standbyAnimator: ValueAnimator? = null
     private var shiftAnimator: ValueAnimator? = null
+    private var kenBurnsAnimator: ValueAnimator? = null
     private var pixelShiftStep = 0
     private var kenBurnsStep = 0
     private val smoothBreathInterpolator = android.view.animation.AccelerateDecelerateInterpolator()
@@ -1297,10 +1314,14 @@ class MainActivity : Activity() {
             val targetX = dp(dxDp).toFloat()
             val targetY = dp(dyDp).toFloat()
             shiftAnimator?.cancel()
+            var last = 0L
             shiftAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 6_000L
                 interpolator = smoothBreathInterpolator
                 addUpdateListener { anim ->
+                    val now = SystemClock.uptimeMillis()
+                    if (now - last < STANDBY_FRAME_MS && anim.animatedFraction < 1f) return@addUpdateListener
+                    last = now
                     val f = anim.animatedValue as Float
                     cleanShiftX = startX + (targetX - startX) * f
                     cleanShiftY = startY + (targetY - startY) * f
@@ -1441,14 +1462,26 @@ class MainActivity : Activity() {
                 2 -> Triple(1.15f, -20, -16)
                 else -> Triple(1.03f, 18, 12)
             }
-            wall.animate()
-                .scaleX(scale)
-                .scaleY(scale)
-                .translationX(dp(txDp).toFloat())
-                .translationY(dp(tyDp).toFloat())
-                .setDuration(14_000L)
-                .setInterpolator(smoothBreathInterpolator)
-                .start()
+            val s0 = wall.scaleX; val x0 = wall.translationX; val y0 = wall.translationY
+            val x1 = dp(txDp).toFloat(); val y1 = dp(tyDp).toFloat()
+            var last = 0L
+            kenBurnsAnimator?.cancel()
+            // A few pixels over 14 s: STANDBY_FRAME_MS steps look the same as every frame, at a third of the redraws.
+            kenBurnsAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 14_000L
+                interpolator = smoothBreathInterpolator
+                addUpdateListener {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - last < STANDBY_FRAME_MS && it.animatedFraction < 1f) return@addUpdateListener
+                    last = now
+                    val f = it.animatedValue as Float
+                    wall.scaleX = s0 + (scale - s0) * f
+                    wall.scaleY = wall.scaleX
+                    wall.translationX = x0 + (x1 - x0) * f
+                    wall.translationY = y0 + (y1 - y0) * f
+                }
+                start()
+            }
             ui.postDelayed(this, 14_200L)
         }
     }
@@ -1591,6 +1624,8 @@ class MainActivity : Activity() {
                 }
             } else {
                 shiftAnimator?.cancel()
+                kenBurnsAnimator?.cancel()
+                kenBurnsAnimator = null
                 ui.removeCallbacks(pixelShiftRunnable)
                 ui.removeCallbacks(kenBurnsRunnable)
                 ui.removeCallbacks(slideshowRunnable)
@@ -1646,6 +1681,7 @@ class MainActivity : Activity() {
     }
 
     private fun pokeIdle() {
+        GoogleNeonDrawable.poke()
         ui.removeCallbacks(idleCleanRunnable)
         val min = prefs.getInt("idle_clean", 5)
         if (min > 0) ui.postDelayed(idleCleanRunnable, min * 60_000L)
@@ -5591,6 +5627,28 @@ class MainActivity : Activity() {
      */
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         pokeIdle()
+        // Back held on the bare home screen turns on photo-frame mode: on its first auto-repeat, or after a timer for remotes
+        // that send no repeats. Once it fires, the rest of that press (repeats and the release) is swallowed, so it neither
+        // leaves the mode nor counts as Back.
+        if (e.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+                backHoldFired = false
+                ui.removeCallbacks(backHold)
+                backHoldArmed = !clean && homeBare()
+                if (backHoldArmed) ui.postDelayed(backHold, ViewConfiguration.getLongPressTimeout().toLong())
+            } else if (e.action == KeyEvent.ACTION_DOWN && backHoldArmed && !backHoldFired) {
+                ui.removeCallbacks(backHold)
+                backHold.run()
+            }
+            if (e.action == KeyEvent.ACTION_UP) {
+                ui.removeCallbacks(backHold)
+                backHoldArmed = false
+            }
+            if (backHoldFired) {
+                if (e.action == KeyEvent.ACTION_UP) backHoldFired = false
+                return true
+            }
+        }
         if (clean) { // photo-frame mode: any button brings the home screen back
             if (e.action == KeyEvent.ACTION_DOWN) setClean(false)
             return true
@@ -9304,6 +9362,8 @@ class MainActivity : Activity() {
             30 to R.string.slideshow_30m,
         )
         const val BADGE = 0xFFFF453A.toInt()
+        /** Standby's slow drifts (Ken Burns, OLED shift) move a few pixels a second: 20 frames a second is plenty. */
+        const val STANDBY_FRAME_MS = 40L // every 3rd frame at 60 Hz, with room for jitter
         // Dark mode tokens, for AMOLED: true black, and near-black cards that read as cards because their edge
         // catches light (brightest along the top), the way light-mode cards use a soft shadow.
         const val DARK_BG = 0xFF000000.toInt() // home ground, settings panel, inset boxes

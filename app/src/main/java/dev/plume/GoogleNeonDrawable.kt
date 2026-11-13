@@ -40,6 +40,22 @@ internal class GoogleNeonDrawable(
         )
         val POSITIONS = floatArrayOf(0f, 0.2f, 0.42f, 0.65f, 0.85f, 1f)
 
+        /**
+         * An animated glow redraws the whole screen on every frame (wallpaper, glass and all): ~60% of a core on a
+         * TV box. So it animates only while someone is using the remote ([poke]), settles after [IDLE_MS] without a
+         * key, and draws at most one frame per [FRAME_MS], which a slow pulse or spin doesn't need more than.
+         */
+        const val IDLE_MS = 10_000L
+        const val FRAME_MS = 30L // every 2nd frame at 60 Hz, with room for jitter
+        private var lastPoke = 0L
+        private val live = java.util.Collections.newSetFromMap(java.util.WeakHashMap<GoogleNeonDrawable, Boolean>())
+
+        /** A key was pressed: settled glows that are still on screen animate again. Main thread only. */
+        fun poke() {
+            lastPoke = android.os.SystemClock.uptimeMillis()
+            live.toList().forEach { it.wake() }
+        }
+
         /** The glow in use (a key of [GLOWS], or "accent"), and the wallpaper's accent colour for "accent". */
         var theme = "google"
         var accent = 0xFF4DA3FF.toInt()
@@ -146,8 +162,45 @@ internal class GoogleNeonDrawable(
         }
     }
 
+    private var sleeping = false
+    private var startedAt = 0L
+    private var lastFrame = 0L
+
+    /**
+     * Per animation frame: false when this one is skipped. A glow that has been idle [IDLE_MS] settles at full
+     * brightness and waits for [poke]; one no longer on a view (its view lost focus or was dropped) stops for good.
+     */
+    private fun frame(): Boolean {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (callback == null) {
+            stop()
+            return false
+        }
+        if (now - maxOf(lastPoke, startedAt) > IDLE_MS) {
+            animator?.cancel()
+            animator = null
+            sleeping = true
+            neonPaint.alpha = 255
+            glowPaint.alpha = 95
+            invalidateSelf()
+            return false
+        }
+        if (now - lastFrame < FRAME_MS) return false
+        lastFrame = now
+        return true
+    }
+
+    private fun wake() {
+        if (!sleeping) return
+        sleeping = false
+        if (callback == null) live.remove(this) else start()
+    }
+
     override fun start() {
         if (animator?.isRunning == true) return
+        sleeping = false
+        startedAt = android.os.SystemClock.uptimeMillis()
+        if (activeMode != "static") live.add(this)
         when (activeMode) {
             "pulse" -> {
                 rotationAngle = 45f
@@ -158,6 +211,7 @@ internal class GoogleNeonDrawable(
                     repeatMode = ValueAnimator.REVERSE
                     interpolator = AccelerateDecelerateInterpolator()
                     addUpdateListener {
+                        if (!frame()) return@addUpdateListener
                         val factor = it.animatedValue as Float
                         neonPaint.alpha = (255 * factor).toInt()
                         glowPaint.alpha = (95 * factor).toInt()
@@ -179,6 +233,7 @@ internal class GoogleNeonDrawable(
                     repeatCount = ValueAnimator.INFINITE
                     interpolator = LinearInterpolator()
                     addUpdateListener {
+                        if (!frame()) return@addUpdateListener
                         rotationAngle = it.animatedValue as Float
                         updateMatrix()
                         invalidateSelf()
@@ -192,6 +247,8 @@ internal class GoogleNeonDrawable(
     override fun stop() {
         animator?.cancel()
         animator = null
+        sleeping = false
+        live.remove(this)
     }
 
     override fun isRunning(): Boolean = animator?.isRunning == true

@@ -176,7 +176,8 @@ internal class GoogleNeonDrawable(
             stop()
             return false
         }
-        if (now - maxOf(lastPoke, startedAt) > IDLE_MS) {
+        // A pulse settles at its next peak (at most one breath later), so the glow never jumps to full brightness.
+        if (now - maxOf(lastPoke, startedAt) > IDLE_MS && (activeMode != "pulse" || neonPaint.alpha >= 250)) {
             animator?.cancel()
             animator = null
             sleeping = true

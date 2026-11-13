@@ -172,9 +172,30 @@ internal fun isGoogleTvLauncher(enabled: Boolean, setting: Int): Boolean =
  * newest first. Some apps write the time in seconds, not milliseconds (Wholphin does, for what is playing): a number
  * that small is read as seconds, or it would sort a thousand times older than every other row.
  */
-internal fun watchSortKey(type: Long, engaged: Long): Long {
-    val millis = if (engaged in 1 until 100_000_000_000L) engaged * 1000 else engaged
-    return (if (type == 0L) 1L shl 50 else 0L) + millis
+internal fun watchSortKey(type: Long, engaged: Long): Long = (if (type == 0L) 1L shl 50 else 0L) + engagedMillis(engaged)
+
+/** A row's last-watched time in milliseconds, whichever unit its app wrote it in (see [watchSortKey]). */
+internal fun engagedMillis(engaged: Long) = if (engaged in 1 until 100_000_000_000L) engaged * 1000 else engaged
+
+/**
+ * The last-watched [times] of one app's Watch Next rows, as times to sort by. An app that syncs rewrites several rows
+ * at once and stamps each with the time it is written: Netflix writes the show you just watched, then one it promotes,
+ * 17 ms later, and "newest first" would put the promoted one ahead. Nobody watches two shows within [gap], so rows
+ * that close are one sync, written in the app's own order: within such a batch the first written sorts as the newest.
+ * A batch keeps its span, so its place among the app's other rows doesn't change.
+ */
+internal fun syncOrder(times: List<Long>, gap: Long = 2_000L): List<Long> {
+    val byTime = times.indices.sortedBy { times[it] }
+    val out = LongArray(times.size)
+    var start = 0
+    for (i in byTime.indices) {
+        if (i < byTime.lastIndex && times[byTime[i + 1]] - times[byTime[i]] <= gap) continue
+        val first = times[byTime[start]]
+        val last = times[byTime[i]]
+        for (j in start..i) out[byTime[j]] = first + last - times[byTime[j]] // mirrored within the batch
+        start = i + 1
+    }
+    return out.toList()
 }
 
 /**
@@ -189,6 +210,14 @@ internal fun channelSortKey(engaged: Long, opened: Long) = watchSortKey(0, if (e
  * key; the weight is the app's own order for them (Nuvio gives its newest the highest), and [newestPerApp] keeps it.
  */
 internal fun <T> byWeight(rows: List<Triple<Long, Long, T>>) = rows.sortedByDescending { it.first }.map { it.second to it.third }
+
+/**
+ * The cards of an app's drawer, as (sort key, card) pairs: what you started in the app first, last watched first (see
+ * [watchSortKey]), then the cards of the app's own channels, newest first where the app dates them and in the app's
+ * order where it doesn't (the sort is stable, and the channels come in already [byWeight]).
+ */
+internal fun <T> drawerOrder(watchNext: List<Pair<Long, T>>, channels: List<Pair<Long, T>>): List<T> =
+    (watchNext.sortedByDescending { it.first } + channels.sortedByDescending { it.first }).map { it.second }
 
 /**
  * A season or episode number fit to show, else null. Some apps store their own data in these columns (Alder puts "e"
@@ -1048,7 +1077,7 @@ class MainActivity : Activity() {
         updateBadge()
         val notes = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            getString(R.string.whats_new).split('\n').filter { !it.startsWith("#") }.take(6).forEach {
+            whatsNew().split('\n').filter { !it.startsWith("#") }.take(6).forEach {
                 val head = it.indexOf("**", 2)
                 val cut = if (head < 0) -1 else it.indexOf(". ", head + 2)
                 addView(label("", 15f).apply {
@@ -1238,6 +1267,13 @@ class MainActivity : Activity() {
     private var cleanShiftX = 0f
     private var cleanShiftY = 0f
     private var standbyProgress = 0f
+
+    /** The photo frame is in its night look: a darker veil, so a TV left on in a dark room doesn't light it up. */
+    private var standbyNight = false
+
+    /** Night for the photo frame: from sunset to sunrise where the weather is (19:00 to 7:00 with no place), if the setting is on. */
+    private fun standbyNightNow() = prefs.getBoolean("standby_night", false) &&
+        autoDark(sunPlace(prefs), System.currentTimeMillis(), Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
     private var standbyAnimator: ValueAnimator? = null
     private var shiftAnimator: ValueAnimator? = null
     private var kenBurnsAnimator: ValueAnimator? = null
@@ -1257,8 +1293,8 @@ class MainActivity : Activity() {
             val h = bounds.height().toFloat()
             if (w <= 0f || h <= 0f) return
 
-            // 1. Subtle cinema dimming veil across the whole screen (~22% dark at full standby)
-            canvas.drawColor(Color.argb((p * 56).toInt(), 0, 0, 0))
+            // 1. Subtle cinema dimming veil across the whole screen (~22% dark at full standby, ~60% at night)
+            canvas.drawColor(Color.argb((p * (if (standbyNight) STANDBY_NIGHT_VEIL else 56)).toInt(), 0, 0, 0))
 
             // 2. Soft borderless elliptical radial shadow behind the clock & weather for readability
             val cx = w / 2f + cleanShiftX
@@ -1296,6 +1332,7 @@ class MainActivity : Activity() {
     private val pixelShiftRunnable = object : Runnable {
         override fun run() {
             if (!clean || !resumed || isDestroyed) return
+            standbyNight = standbyNightNow() // checked on each step, so the frame dims at sunset while it is on
             val clock = findViewById<View>(R.id.clock) ?: return
             val dateLine = findViewById<View>(R.id.date)?.parent as? View ?: return
             val scrim = findViewById<View>(R.id.wallpaperScrim)
@@ -1589,6 +1626,7 @@ class MainActivity : Activity() {
                 cleanShiftY = 0f
                 pixelShiftStep = 0
                 kenBurnsStep = 0
+                standbyNight = standbyNightNow()
                 shiftAnimator?.cancel()
                 ui.removeCallbacks(pixelShiftRunnable)
                 ui.postDelayed(pixelShiftRunnable, 4_000L)
@@ -3321,7 +3359,7 @@ class MainActivity : Activity() {
             null, null, "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} COLLATE NOCASE")?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
-                found[id] = (c.getString(1) ?: "Photos") to (found[id]?.second ?: 0) + 1
+                found[id] = (c.getString(1) ?: getString(R.string.your_photos)) to (found[id]?.second ?: 0) + 1
             }
         }
         return found.map { (id, v) -> Triple(id, v.first, v.second) }
@@ -3368,7 +3406,7 @@ class MainActivity : Activity() {
         }) { pickWallpaper(forDark) }
     }
 
-    private var upload: UploadServer? = null
+    private var upload: PhoneServer? = null // the phone page that is open now (wallpaper upload or home-screen organiser)
 
     /**
      * "Add from phone": a QR code for a page served from this TV. The phone posts a photo, we turn it into a
@@ -3381,7 +3419,7 @@ class MainActivity : Activity() {
         val active = AtomicBoolean(true)
         val status = label(getString(R.string.waiting_photo), 14f).apply { gravity = Gravity.CENTER; maxLines = 2 }
         val server = try {
-            UploadServer((1000..9999).random().toString(), File.createTempFile("upload-", ".tmp", cacheDir)) { file, video ->
+            UploadServer((1000..9999).random().toString(), File.createTempFile("upload-", ".tmp", cacheDir), uploadTexts()) { file, video ->
                 if (!active.get()) return@UploadServer null
                 val saved = (if (video) importVideoWallpaper(file, dir) else importWallpaper(file, dir)) ?: return@UploadServer null
                 ui.post {
@@ -3405,7 +3443,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, dp(4), 0, dp(12))
-            addView(ImageView(this@MainActivity).apply { setImageBitmap(qrBitmap(url, dp(200))) })
+            addView(qrView(url))
             addView(label(url, 14f).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(4)) })
             addView(label(getString(R.string.scan_hint), 12f).apply {
                 gravity = Gravity.CENTER
@@ -3422,11 +3460,121 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- organize from a phone ----------
+
+    /** Runs [block] on the UI thread and waits for it: the phone pages' server has its own thread, the home screen has this one. */
+    private fun <T> onUi(block: () -> T): T? {
+        val task = java.util.concurrent.FutureTask(block)
+        ui.post(task)
+        return try {
+            task.get(5, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun manageTexts() = ManageTexts(
+        title = getString(R.string.manage_from_phone), intro = getString(R.string.mg_intro), name = getString(R.string.category_name_hint),
+        add = getString(R.string.add_category), rest = getString(R.string.mg_rest), moveTo = getString(R.string.mg_move_to),
+        save = getString(R.string.mg_save), saved = getString(R.string.mg_saved), failed = getString(R.string.mg_failed),
+        loading = getString(R.string.mg_loading), unreachable = getString(R.string.up_unreachable), empty = getString(R.string.mg_empty),
+        notFound = getString(R.string.up_not_found),
+    )
+
+    /** The home screen's layout for the phone: the categories with their apps, and every app's name. HDMI inputs stay on the TV. */
+    private fun manageState(): String {
+        val apps = sortedApps().filter { !it.pkg.startsWith(HDMI) }
+        val known = apps.mapTo(HashSet()) { it.pkg }
+        return JSONObject().apply {
+            put("cats", org.json.JSONArray().apply {
+                for (c in categoriesList()) put(JSONObject().apply {
+                    put("id", c.id)
+                    put("name", c.name)
+                    put("apps", org.json.JSONArray(c.apps.filter { it in known }))
+                })
+            })
+            put("apps", JSONObject().apply { for (a in apps) put(a.pkg, a.label) })
+        }.toString()
+    }
+
+    /** Applies the layout the phone sent back ([managedCategories] has the rules). False when it can't be read or leaves no category. */
+    private fun applyManaged(body: String): Boolean {
+        val rows = try {
+            val cats = JSONObject(body).getJSONArray("cats")
+            (0 until cats.length()).map { i ->
+                val c = cats.getJSONObject(i)
+                val apps = c.optJSONArray("apps")
+                ManagedRow(c.optString("id"), c.optString("name"), (0 until (apps?.length() ?: 0)).map { apps!!.getString(it) })
+            }
+        } catch (e: Exception) {
+            return false
+        }
+        val known = sortedApps().mapTo(HashSet()) { it.pkg }
+        val now = System.currentTimeMillis()
+        val updated = managedCategories(categoriesList(), rows, known, { it.startsWith(HDMI) }) { "cat_${now}_$it" } ?: return false
+        CategoryManager.saveCategories(prefs, updated)
+        // An app in no category is off the home screen, as Remove from row leaves it: All apps still has it.
+        val placed = updated.flatMapTo(HashSet()) { it.apps }
+        prefs.edit().putStringSet("row_hidden", known.filterTo(HashSet()) { it !in placed && !it.startsWith(HDMI) }).apply()
+        renderApps()
+        return true
+    }
+
+    /** The panel with the QR code of the organiser page; the page's server runs while the panel is open. */
+    private fun manageFromPhone() {
+        val ip = lanAddress() ?: return toast(getString(R.string.connect_network), long = true)
+        val status = label(getString(R.string.mg_waiting), 14f).apply { gravity = Gravity.CENTER; maxLines = 2 }
+        val server = try {
+            ManageServer((1000..9999).random().toString(), manageTexts(), state = { onUi { manageState() } ?: "{}" }) { body ->
+                onUi {
+                    if (isDestroyed) return@onUi false
+                    applyManaged(body).also { if (it) status.text = getString(R.string.mg_applied) }
+                } == true
+            }
+        } catch (e: IOException) {
+            return toast(getString(R.string.upload_failed), long = true)
+        }
+        upload = server
+        val url = "http://$ip:${server.port}/${server.code}"
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, dp(4), 0, dp(12))
+            addView(qrView(url))
+            addView(label(url, 14f).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(4)) })
+            addView(label(getString(R.string.scan_hint), 12f).apply {
+                gravity = Gravity.CENTER
+                alpha = 0.6f
+                maxLines = 3
+            })
+            addView(status.apply { setPadding(0, dp(12), 0, 0) })
+        }
+        showPage(getString(R.string.manage_from_phone), listOf(page(getString(R.string.done)) { pickCategoriesSettings() }), top = box) { pickCategoriesSettings() }
+        pageExit = {
+            server.stop()
+            if (upload === server) upload = null
+        }
+    }
+
     /** The TV's own address on the home network (IPv4: easy to read and type). */
     private fun lanAddress(): String? {
         val cm = getSystemService(ConnectivityManager::class.java)
         return cm.getLinkProperties(cm.activeNetwork)?.linkAddresses?.map { it.address }
             ?.firstOrNull { it is java.net.Inet4Address && !it.isLoopbackAddress }?.hostAddress
+    }
+
+    /**
+     * The QR code of a phone page, a quarter of the screen high: the address, the hint, the status and Done fit under
+     * it in the panel. Any taller and the panel scrolls down to Done, which cuts the top of the code off (its two
+     * upper corners, without which no phone reads it).
+     */
+    private fun qrView(url: String): ImageView {
+        val size = resources.displayMetrics.heightPixels / 4
+        return ImageView(this).apply {
+            setImageBitmap(qrBitmap(url, size))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(size, size)
+        }
     }
 
     /** Black on white with the standard 4-module quiet zone, whole pixels per module so it stays sharp. */
@@ -3769,7 +3917,7 @@ class MainActivity : Activity() {
                 showWeather()
                 renderSettings(R.string.weather_units)
             },
-            R.string.weather_location to Triple(getString(R.string.weather_location), if (manualCity()) prefs.getString("geo_city", null) ?: "" else "Automatic") { pickCity() },
+            R.string.weather_location to Triple(getString(R.string.weather_location), if (manualCity()) prefs.getString("geo_city", null) ?: "" else getString(R.string.automatic)) { pickCity() },
             R.string.screensaver to Triple(getString(R.string.screensaver), when {
                 downloading -> getString(R.string.downloading_gallery)
                 !galleryOn() -> screensaverName()
@@ -3783,6 +3931,10 @@ class MainActivity : Activity() {
                 steps[R.string.standby_slideshow]!!(1)
             },
             R.string.standby_music to Triple(getString(R.string.standby_music), toggle(prefs.getBoolean("standby_music", false))) { toggleNowPlaying() },
+            R.string.standby_night to Triple(getString(R.string.standby_night), toggle(prefs.getBoolean("standby_night", false))) {
+                prefs.edit().putBoolean("standby_night", !prefs.getBoolean("standby_night", false)).apply()
+                renderSettings(R.string.standby_night)
+            },
             R.string.test_screensaver to Triple(getString(R.string.test_screensaver), "") { testScreensaver() },
             R.string.screensaver_timing to Triple(getString(R.string.screensaver_timing), "") { openScreensaverSettings() },
             R.string.setup_home to Triple(getString(R.string.setup_home), "") { closeLauncherSettings(); startHomeSetup() },
@@ -3828,7 +3980,7 @@ class MainActivity : Activity() {
                 R.string.cw_vertical_position, R.string.row_name, R.string.show_icons, R.string.cw_apps, R.string.cw_channels, R.string.restore_hidden)),
             Triple(R.string.section_clock_weather, if (weather == "off") on(false) else "${rows[R.string.weather_units]!!.second} · ${prefs.getString("geo_city", null) ?: rows[R.string.weather_location]!!.second}",
                 listOf(R.string.clock_style, R.string.clock_size, R.string.clock_seconds, R.string.weather, R.string.weather_units, R.string.weather_location)),
-            Triple(R.string.section_screensaver, rows[R.string.screensaver]!!.second, listOf(R.string.screensaver, R.string.idle_clean, R.string.standby_slideshow, R.string.standby_music, R.string.test_screensaver, R.string.screensaver_timing)),
+            Triple(R.string.section_screensaver, rows[R.string.screensaver]!!.second, listOf(R.string.screensaver, R.string.idle_clean, R.string.standby_slideshow, R.string.standby_music, R.string.standby_night, R.string.test_screensaver, R.string.screensaver_timing)),
             // Home app is Android TV's own way (Google TV and Fire OS keep their home); Fire OS never passes keys to us, so no smooth volume there.
             Triple(R.string.section_remote_home, if (homeSetUp()) getString(R.string.home_button) else on(false),
                 listOfNotNull(R.string.home_button, R.string.default_launcher.takeIf { !googleTv() && !fireTv() }, R.string.smooth_volume.takeIf { !fireTv() },
@@ -4746,21 +4898,21 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Opens the input's HDMI port, the way the HDMI tiles do (Fire OS needs its own way: see [Remap.openInput]).
+     * An input added by hand before 1.4.2 has no port: it opens the TV input of the same name if there is one,
+     * and otherwise says where to give it a port.
+     */
     private fun launchTopInput(input: TopInput) {
-        if (input.port.isNotEmpty()) {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(input.port)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                return
-            } catch (_: Exception) {}
+        val port = input.port.ifEmpty {
+            hdmiInputs().firstOrNull { it.label.equals(input.name, true) }?.let { TopInputManager.portOf(it.pkg) }
         }
-        val matching = hdmiInputs().firstOrNull { it.label.equals(input.name, true) || it.pkg.contains(input.port) }
-        if (matching != null) {
-            try {
-                startActivity(matching.launch)
-                return
-            } catch (_: Exception) {}
+        if (port == null) return toast(getString(R.string.input_no_port, input.name), long = true)
+        try {
+            Remap.openInput(this, port)
+        } catch (e: Exception) {
+            toast(input.name) // the port is gone (another TV's backup, say)
         }
-        toast(input.name)
     }
 
     private fun inputIconChoices(): List<Pair<String, String>> = listOf(
@@ -4804,9 +4956,7 @@ class MainActivity : Activity() {
                 promptAddInput()
             },
             getString(R.string.delete_input) to {
-                val inputs = TopInputManager.loadInputs(prefs, detected)
-                val updated = inputs.filter { it.id != input.id }
-                TopInputManager.saveInputs(prefs, updated)
+                TopInputManager.delete(prefs, TopInputManager.loadInputs(prefs, detected), input)
                 renderInputsBar()
             },
             getString(R.string.manage_inputs) to {
@@ -4859,6 +5009,15 @@ class MainActivity : Activity() {
 
     private fun rowAlign() = prefs.getString("row_align", "left")!!.takeIf { it in ROW_ALIGN } ?: "left"
 
+    /** The id of the category an apps row shows ([RECENTS_ID] for the Recent row), or null for a view that is not one. */
+    private fun rowCategoryId(row: View?) = row?.getTag(R.id.nameRow) as? String
+
+    /**
+     * The Recent row: the apps opened last, newest first, from the time [launch] already keeps for each app. It is not
+     * a category: nothing in it can be moved, and its apps keep their place in their own rows.
+     */
+    private fun recentsOn() = prefs.getBoolean("recents_row", false)
+
     private fun categoryIconDrawable(iconKey: String, catName: String): Drawable? {
         val key = if (iconKey == "auto") {
             val lower = catName.lowercase()
@@ -4885,6 +5044,7 @@ class MainActivity : Activity() {
             "music" -> R.drawable.ic_cat_music
             "star" -> R.drawable.ic_cat_star
             "folder" -> R.drawable.ms_folder
+            "recent" -> R.drawable.ic_clock
             "none" -> 0
             else -> R.drawable.ic_cat_bookmark
         }
@@ -4937,6 +5097,8 @@ class MainActivity : Activity() {
 
     private fun renderApps() {
         val focusedTag = currentFocus?.tag
+        val focusedRowCat = rowCategoryId(currentFocus?.parent as? View)
+        var focusInItsRow = false // the same app can sit in two rows (its category and Recent): focus stays in its row
         val wasAppFocus = appRows.any { it === currentFocus?.parent }
         val firstFill = appRow.childCount == 0 && currentFocus?.parent === wifi.parent
         val takeFocus = currentFocus == null || wasAppFocus || firstFill
@@ -4974,7 +5136,7 @@ class MainActivity : Activity() {
             } else {
                 cat.apps.filter { it in appsMap }
             }
-            if (catPkgs.isEmpty() && cats.size > 1) return
+            if (catPkgs.isEmpty() && (cats.size > 1 || cat.id == RECENTS_ID)) return
 
             val effectiveSize = if (cat.size in ROW_SIZES) cat.size else rowSize()
             val catAcross = ROW_SIZES.getValue(effectiveSize).second
@@ -5048,6 +5210,7 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
                 clipChildren = false
                 orientation = LinearLayout.HORIZONTAL
+                setTag(R.id.nameRow, cat.id) // see rowCategoryId
             }
             targetList.add(thisRow)
             appRows.add(thisRow)
@@ -5192,13 +5355,24 @@ class MainActivity : Activity() {
                     }
                     showRowLabel(v, focused)
                 }
-                if (focusedTag != null && t.tag == focusedTag) firstFocusedView = t
+                if (focusedTag != null && t.tag == focusedTag && !focusInItsRow) {
+                    firstFocusedView = t
+                    focusInItsRow = cat.id == focusedRowCat
+                }
                 if (firstFocusedView == null && isFirstOverall && i == 0) firstFocusedView = t
             }
         }
 
+        // Recent comes first, where the eye lands; with nothing opened yet it has no row and the categories start the screen.
+        val recent = if (!recentsOn()) emptyList() else appsMap.values.filter { prefs.getLong("t_" + it.pkg, 0L) > 0L }
+            .sortedByDescending { prefs.getLong("t_" + it.pkg, 0L) }.take(RECENTS_MAX).map { it.pkg }
+        if (recent.isNotEmpty()) {
+            renderCategoryItem(Category(RECENTS_ID, getString(R.string.recents), recent, icon = "recent"), 0,
+                isBelowGroup = false, appRowsContainer, appRowsAbove)
+        }
+        val afterRecent = if (recent.isNotEmpty()) 1 else 0
         catsAbove.forEachIndexed { idx, cat ->
-            renderCategoryItem(cat, idx, isBelowGroup = false, appRowsContainer, appRowsAbove)
+            renderCategoryItem(cat, idx + afterRecent, isBelowGroup = false, appRowsContainer, appRowsAbove)
         }
         catsBelow.forEachIndexed { idx, cat ->
             renderCategoryItem(cat, idx, isBelowGroup = true, appRowsBelowWatchContainer, appRowsBelow)
@@ -5854,7 +6028,7 @@ class MainActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (childIdx == 1) {
                             val gear = currentRow.getChildAt(0)
-                            if (gear != null) {
+                            if (gear != null && rowCategoryId(currentRow) != RECENTS_ID) {
                                 gear.visibility = View.VISIBLE
                                 val scroller = appScrollers.getOrNull(globalRowIdx)
                                 scroller?.smoothScrollTo(0, 0)
@@ -6002,14 +6176,16 @@ class MainActivity : Activity() {
             getString(R.string.unlock_to_edit) to { unlock { v.requestFocus(); appMenu(v) } },
         ))
         val cats = categoriesList()
+        val recent = rowCategoryId(currentRow) == RECENTS_ID // not a category: its order is the order of use
         holdMenu(v, listOfNotNull(
-            getString(R.string.move) to { startEdit(grab = v, once = true) },
+            if (recent) getString(R.string.open) to { v.performClick(); Unit } else null,
+            if (recent) null else getString(R.string.move) to { startEdit(grab = v, once = true) },
             if (canHaveDrawer(pkg)) getString(R.string.yt_drawer_feed) to {
                 openLauncherSettings()
                 pickYtChannels(forPkg = pkg, fromAppMenu = true)
             } else null,
-            if (cats.size > 1 || cats.isNotEmpty()) getString(R.string.move_to_category) to { chooseCategoryForApp(v, pkg) } else null,
-            getString(R.string.remove_from_row) to {
+            if (!recent && cats.isNotEmpty()) getString(R.string.move_to_category) to { chooseCategoryForApp(v, pkg) } else null,
+            if (recent) null else getString(R.string.remove_from_row) to {
                 val i = currentRow.indexOfChild(v)
                 if (pkg.startsWith(HDMI)) {
                     prefs.edit().putStringSet("inputs_pinned", pinnedInputs() - pkg).apply()
@@ -6365,9 +6541,10 @@ class MainActivity : Activity() {
     private var moveOnce = false // moving one app from the hold menu: OK places it and editing ends
 
     private fun startEdit(grab: View?, once: Boolean = false) {
+        val row = findAppRowFor(grab) ?: appRows.firstOrNull() ?: appRow
+        if (rowCategoryId(row) == RECENTS_ID) return
         editing = true
         moveOnce = once
-        val row = findAppRowFor(grab) ?: appRows.firstOrNull() ?: appRow
         editingRowIndex = appRows.indexOf(row).coerceAtLeast(0)
         appsTitle.text = if (once) getString(R.string.moving_hint) else getString(R.string.editing_hint)
         appsTitle.visibility = View.VISIBLE
@@ -6389,11 +6566,10 @@ class MainActivity : Activity() {
         val row = appRows.getOrNull(editingRowIndex) ?: appRow
         val rowPkgs = (0 until row.childCount).mapNotNull { row.getChildAt(it)?.tag as? String }
         val cats = categoriesList()
-        if (editingRowIndex in cats.indices) {
-            val updated = cats.mapIndexed { idx, c ->
-                if (idx == editingRowIndex) c.copy(apps = rowPkgs) else c
-            }
-            CategoryManager.saveCategories(prefs, updated)
+        // By id, not by position: an empty category has no row, and rows under Continue Watching come last.
+        val catId = rowCategoryId(row)
+        if (cats.any { it.id == catId }) {
+            CategoryManager.saveCategories(prefs, cats.map { c -> if (c.id == catId) c.copy(apps = rowPkgs) else c })
         } else {
             saveOrder(rowPkgs + sortedApps().map { it.pkg }.filter { it !in rowPkgs })
         }
@@ -6483,21 +6659,41 @@ class MainActivity : Activity() {
         showPage(getString(R.string.inputs_bar), rows, back = { renderSettings(R.string.inputs_bar) })
     }
 
+    /**
+     * Adds one of the TV's HDMI inputs that the bar lacks (one deleted earlier). An input is always one of the TV's
+     * ports: an icon with no port behind it could open nothing. Its name and icon are changed afterwards.
+     */
     private fun promptAddInput() {
-        val iconChoices = inputIconChoices()
-        promptInputName("") { name ->
-            val detected = hdmiInputs().map { it.pkg to it.label }
-            val inputs = TopInputManager.loadInputs(prefs, detected).toMutableList()
-            val newId = "input_${System.currentTimeMillis()}"
-            showPage(getString(R.string.choose_input_icon), iconChoices.map { (label, key) ->
-                page(label, "") {
-                    inputs.add(TopInput(newId, name, key))
-                    TopInputManager.saveInputs(prefs, inputs)
-                    renderInputsBar()
-                    pickInputsSettings()
-                }
-            }, back = { pickInputsSettings() })
+        val detected = hdmiInputs()
+        val inputs = TopInputManager.loadInputs(prefs, detected.map { it.pkg to it.label })
+        val missing = detected.filter { app -> inputs.none { it.port == TopInputManager.portOf(app.pkg) } }
+        if (missing.isEmpty()) {
+            toast(getString(R.string.no_more_inputs), long = true)
+            return pickInputsSettings()
         }
+        showPage(getString(R.string.add_input), missing.map { app ->
+            page(app.label, "") {
+                TopInputManager.restore(prefs, TopInputManager.portOf(app.pkg))
+                renderInputsBar() // loads the inputs again, which adds the port
+                pickInputsSettings()
+            }
+        }, back = { pickInputsSettings() })
+    }
+
+    /** Which of the TV's HDMI ports [current] opens: for an input added by hand before the bar followed the TV's ports. */
+    private fun pickInputPort(current: TopInput) {
+        val detected = hdmiInputs()
+        showPage(getString(R.string.input_port), detected.map { app ->
+            val port = TopInputManager.portOf(app.pkg)
+            page(app.label, if (current.port == port) "✓" else "") {
+                val inputs = TopInputManager.loadInputs(prefs, detected.map { it.pkg to it.label })
+                // One input per port: the one that had this port gives it up to this one.
+                TopInputManager.saveInputs(prefs, inputs.filter { it.id == current.id || it.port != port }
+                    .map { if (it.id == current.id) it.copy(port = port) else it })
+                renderInputsBar()
+                manageSingleInput(current.copy(port = port))
+            }
+        }, back = { manageSingleInput(current) })
     }
 
     private fun manageSingleInput(input: TopInput) {
@@ -6530,9 +6726,12 @@ class MainActivity : Activity() {
                 renderInputsBar()
                 manageSingleInput(current.copy(hidden = !current.hidden))
             },
+            page(getString(R.string.input_port), detected.firstOrNull { TopInputManager.portOf(it.first) == current.port }?.second
+                ?: getString(R.string.input_port_none)) {
+                pickInputPort(current)
+            },
             page(getString(R.string.delete_input), "") {
-                val updated = inputs.filter { it.id != current.id }
-                TopInputManager.saveInputs(prefs, updated)
+                TopInputManager.delete(prefs, inputs, current)
                 renderInputsBar()
                 pickInputsSettings()
             }
@@ -6544,8 +6743,14 @@ class MainActivity : Activity() {
         val cats = categoriesList()
         val showTitles = CategoryManager.showTitles(prefs)
         val rows = listOf(
+            page(getString(R.string.manage_from_phone), "") { manageFromPhone() },
             page(getString(R.string.category_titles), if (showTitles) getString(R.string.shown) else getString(R.string.hidden)) {
                 CategoryManager.setShowTitles(prefs, !showTitles)
+                renderApps()
+                pickCategoriesSettings()
+            },
+            page(getString(R.string.recents_row), toggle(recentsOn())) {
+                prefs.edit().putBoolean("recents_row", !recentsOn()).apply()
                 renderApps()
                 pickCategoriesSettings()
             },
@@ -6786,7 +6991,7 @@ class MainActivity : Activity() {
 
     private fun launch(a: App) {
         prefs.edit().putInt("n_" + a.pkg, prefs.getInt("n_" + a.pkg, 0) + 1).putLong("t_" + a.pkg, System.currentTimeMillis()).apply()
-        if (prefs.getString("sort", "manual") == "usage") appsDirty = true
+        if (prefs.getString("sort", "manual") == "usage" || recentsOn()) appsDirty = true
         val from = currentFocus?.takeIf { it.tag == a.pkg } // the tile that was pressed, not one a remote key opened it from
         try {
             if (a.pkg.startsWith(HDMI)) {
@@ -7150,14 +7355,20 @@ class MainActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(14), dp(16), dp(14), dp(2))
         })
-        settingsList.addView(label("Fork de Plume Launcher optimisé pour Android TV.\nConçu pour la fluidité, le design et la personnalisation moderne.", 12f).apply {
+        settingsList.addView(label(getString(R.string.about_fork), 12f).apply {
+            alpha = 0.75f
+            maxLines = Int.MAX_VALUE
+            ellipsize = null
+            setPadding(dp(14), dp(2), dp(14), dp(6))
+        })
+        settingsList.addView(label(aboutThisTv(), 12f).apply {
             alpha = 0.75f
             maxLines = Int.MAX_VALUE
             ellipsize = null
             setPadding(dp(14), dp(2), dp(14), dp(12))
         })
         // Focusable, lit on focus, so Down walks through notes longer than the panel and it scrolls along.
-        getString(R.string.whats_new).split('\n').forEach {
+        whatsNew().split('\n').forEach {
             if (it.startsWith("#")) {
                 settingsList.addView(label(it.substring(1), 13f).apply {
                     setTypeface(typeface, Typeface.BOLD)
@@ -7177,6 +7388,37 @@ class MainActivity : Activity() {
         }
         settingsList.getChildAt(0).nextFocusDownId = View.NO_ID // showPage stops Down at its last row
         settingsList.getChildAt(settingsList.childCount - 1).let { it.id = View.generateViewId(); it.nextFocusDownId = it.id }
+    }
+
+    /**
+     * This version's notes in the TV's language: CHANGELOG.md is written in French and CHANGELOG.en.md in English
+     * (see app/build.gradle.kts); every other language reads the English ones.
+     */
+    private fun whatsNew() =
+        getString(if (resources.configuration.locales[0].language == "fr") R.string.whats_new_fr else R.string.whats_new)
+
+    /** The texts of the phone's upload page and of its answers, in the TV's language. */
+    private fun uploadTexts() = UploadTexts(
+        title = getString(R.string.up_page_title), heading = getString(R.string.up_heading), intro = getString(R.string.up_intro),
+        choose = getString(R.string.up_choose), send = getString(R.string.up_send), sending = getString(R.string.up_sending),
+        another = getString(R.string.up_another), unreachable = getString(R.string.up_unreachable),
+        added = { getString(R.string.up_added, it) }, badVideo = getString(R.string.up_bad_video),
+        badPhoto = getString(R.string.up_bad_photo), tooBig = { getString(R.string.up_too_big, it) },
+        notFound = getString(R.string.up_not_found),
+    )
+
+    /** The TV's model and Android version, its address on the network (for adb) and its free storage, one per line. */
+    private fun aboutThisTv(): String {
+        val lines = mutableListOf(getString(R.string.sys_device, "${Build.MANUFACTURER} ${Build.MODEL}", Build.VERSION.RELEASE))
+        lanAddress()?.let { lines += getString(R.string.sys_ip, it) }
+        try {
+            val disk = android.os.StatFs(filesDir.path)
+            lines += getString(R.string.sys_storage, android.text.format.Formatter.formatShortFileSize(this, disk.availableBytes),
+                android.text.format.Formatter.formatShortFileSize(this, disk.totalBytes))
+        } catch (e: Exception) {
+            // no storage figure on this TV: the other lines still show
+        }
+        return lines.joinToString("\n")
     }
 
     /** A What's new entry with a bullet, its **marked** words bold and the marks removed. */
@@ -7943,20 +8185,6 @@ class MainActivity : Activity() {
             } catch (_: Exception) {}
         }
 
-        // Seed initial channel from your just-watched RMC Story (channel 23, id 846) if empty
-        if (recentMap.isEmpty()) {
-            val seedId = "846"
-            recentMap[seedId] = Prog(
-                "23 · RMC Story",
-                "En direct",
-                0,
-                "https://img1.oqee.net/pictures/4483914/wide_specific/h480",
-                "https://oq.ee/channel/846/play",
-                pkg,
-                pkg,
-                true
-            )
-        }
         try {
             val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "2500"))
             val channelMeta = HashMap<String, Pair<String, String>>() // channelId -> (name, img)
@@ -7982,7 +8210,7 @@ class MainActivity : Activity() {
                             val pImg = formatOqeeImg(m.groupValues[3].trim())
                             channelProgTitle[chId] = pTitle
                             if (pImg != null && chId !in channelMeta) {
-                                channelMeta[chId] = ("Chaîne $chId" to pImg)
+                                channelMeta[chId] = (getString(R.string.channel_n, chId) to pImg)
                             }
                         }
                     } else if ("On live item click LiveData(" in line) {
@@ -8096,15 +8324,15 @@ class MainActivity : Activity() {
         val legacySaved = prefs.getStringSet("yt_channels", null)
 
         val watchNextProgs = try {
-            readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden).map { it.second }
+            readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden)
         } catch (_: Exception) {
             emptyList()
         }
-        val oqeeProgs = readOqeeFeed(hidden)
-        val combinedWatchNext = watchNextProgs + oqeeProgs
-        val watchNextByPkg = combinedWatchNext
-            .filter { !it.pkg.isNullOrEmpty() && !it.image.isNullOrEmpty() }
-            .groupBy { it.pkg!! }
+        // OQEE's channels come newest first already, with no time of their own: they keep that order, after dated rows.
+        val oqeeProgs = readOqeeFeed(hidden).mapIndexed { i, p -> -i.toLong() to p }
+        val watchNextByPkg = (watchNextProgs + oqeeProgs)
+            .filter { !it.second.pkg.isNullOrEmpty() && !it.second.image.isNullOrEmpty() }
+            .groupBy { it.second.pkg!! }
 
         val channels = appChannels()
         val channelsByPkg = channels.groupBy { it.second }
@@ -8114,10 +8342,8 @@ class MainActivity : Activity() {
         val result = mutableListOf<Prog>()
 
         for (pkg in allPkgs) {
-            val appProgs = mutableListOf<Prog>()
-            if (ytChannelOn(pkg, WATCH_NEXT)) {
-                watchNextByPkg[pkg]?.let { appProgs.addAll(it) }
-            }
+            val started = if (ytChannelOn(pkg, WATCH_NEXT)) watchNextByPkg[pkg].orEmpty() else emptyList()
+            var fromChannels = emptyList<Pair<Long, Prog>>()
 
             val pkgChannels = channelsByPkg[pkg].orEmpty()
             if (pkgChannels.isNotEmpty()) {
@@ -8125,18 +8351,15 @@ class MainActivity : Activity() {
                     ytChannelOn(p, name)
                 }
 
-                val chProgs = activeChannels.flatMap { (id) ->
+                fromChannels = activeChannels.flatMap { (id) ->
                     readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "yt$id")
-                }.map { pair ->
-                    val p = pair.second
-                    if (p.pkg == null) Prog(p.title, p.sub, p.progress, p.image, p.intent, pkg, p.group ?: pkg, p.wide) else p
-                }.filter { !it.image.isNullOrEmpty() }
-
-                appProgs.addAll(chProgs)
+                }.map { (key, p) ->
+                    key to (if (p.pkg == null) Prog(p.title, p.sub, p.progress, p.image, p.intent, pkg, p.group ?: pkg, p.wide) else p)
+                }.filter { !it.second.image.isNullOrEmpty() }
             }
 
             result.addAll(
-                appProgs.distinctBy { it.intent ?: it.title }.take(12)
+                drawerOrder(started, fromChannels).distinctBy { it.intent ?: it.title }.take(12)
             )
         }
         return result
@@ -8280,7 +8503,7 @@ class MainActivity : Activity() {
                 .sortedBy { appName(it).lowercase() }
 
             if (candidatePkgs.isEmpty()) {
-                toast("Aucun canal trouvé. Ouvrez l'application pour charger les flux.")
+                toast(getString(R.string.drawer_no_channels))
                 return
             }
 
@@ -8309,7 +8532,7 @@ class MainActivity : Activity() {
 
         if (entries.isEmpty()) {
             if (fromAppMenu && settingsScrim.visibility == View.VISIBLE) closeLauncherSettings()
-            toast("Aucun canal trouvé. Ouvrez l'application pour charger les flux.")
+            toast(getString(R.string.drawer_no_channels))
             return
         }
 
@@ -8339,7 +8562,7 @@ class MainActivity : Activity() {
             val appLabel = appName(p)
             val displayCh = when {
                 n == WATCH_NEXT -> getString(R.string.continue_watching)
-                n.equals(appLabel, ignoreCase = true) -> "Catalogue / Recommandations"
+                n.equals(appLabel, ignoreCase = true) -> getString(R.string.drawer_catalogue)
                 else -> n
             }
             val count = if (n == WATCH_NEXT) {
@@ -8691,6 +8914,7 @@ class MainActivity : Activity() {
     /** Pairs of (sort key, item), see [watchSortKey]; a [group] is a channel, its rows sorted by [channelSortKey] and [byWeight]. */
     private fun readPrograms(uri: Uri, hidden: Set<String>, group: String? = null): List<Pair<Long, Prog>> {
         val out = ArrayList<Triple<Long, Long, Prog>>()
+        val watchNext = ArrayList<Triple<String?, Long, Long>>() // for a Watch Next row of out: its app, type and time
         val cursor = contentResolver.query(uri, null, null, null, null)
         if (cursor == null) android.util.Log.w("Plume", "no TV provider answer for $uri") // provider hidden from us or missing
         cursor?.use { c ->
@@ -8715,9 +8939,14 @@ class MainActivity : Activity() {
                 val imgUri = str("thumbnail_uri") ?: str("poster_art_uri") ?: str("logo_uri")
                 val prog = Prog(title, sub, progress, imgUri, str("intent_uri"), pkg, group ?: pkg, wide)
                 val engaged = num("last_engagement_time_utc_millis")
-                out += Triple(num("weight"),
-                    if (group == null) watchSortKey(num("watch_next_type"), engaged) else channelSortKey(engaged, prefs.getLong("t_$pkg", 0)), prog)
+                if (group == null) watchNext += Triple(pkg, num("watch_next_type"), engagedMillis(engaged))
+                out += Triple(num("weight"), if (group == null) 0L else channelSortKey(engaged, prefs.getLong("t_$pkg", 0)), prog)
             }
+        }
+        // Watch Next: each app's rows sort by their time, with the rows of one sync in the app's order (see syncOrder).
+        for (rows in watchNext.indices.groupBy { watchNext[it].first }.values) {
+            val times = syncOrder(rows.map { watchNext[it].third })
+            rows.forEachIndexed { n, i -> out[i] = Triple(out[i].first, watchSortKey(watchNext[i].second, times[n]), out[i].third) }
         }
         return byWeight(out)
     }
@@ -9289,7 +9518,7 @@ class MainActivity : Activity() {
             R.string.restore_hidden to R.drawable.ms_visibility_off,
             R.string.clock_style to R.drawable.ms_schedule, R.string.clock_size to R.drawable.ms_format_size, R.string.clock_seconds to R.drawable.ms_timer, R.string.weather to R.drawable.ms_partly_cloudy_day, R.string.weather_units to R.drawable.ms_thermostat, R.string.weather_location to R.drawable.ms_location_on,
             R.string.backup_restore to R.drawable.ms_folder,
-            R.string.screensaver to R.drawable.ms_bedtime, R.string.idle_clean to R.drawable.ms_bedtime, R.string.standby_slideshow to R.drawable.ms_photo_library, R.string.standby_music to R.drawable.ms_podcasts, R.string.test_screensaver to R.drawable.ms_play_circle, R.string.screensaver_timing to R.drawable.ms_timer,
+            R.string.screensaver to R.drawable.ms_bedtime, R.string.idle_clean to R.drawable.ms_bedtime, R.string.standby_slideshow to R.drawable.ms_photo_library, R.string.standby_music to R.drawable.ms_podcasts, R.string.standby_night to R.drawable.ms_dark_mode, R.string.test_screensaver to R.drawable.ms_play_circle, R.string.screensaver_timing to R.drawable.ms_timer,
             R.string.home_button to R.drawable.ms_home, R.string.default_launcher to R.drawable.ms_home_app_logo, R.string.smooth_volume to R.drawable.ms_volume_up,
             R.string.section_keys to R.drawable.ms_keyboard, R.string.setup_home to R.drawable.ms_restart_alt,
         )
@@ -9314,7 +9543,7 @@ class MainActivity : Activity() {
             R.string.edit_apps_row to R.string.help_rearrange, R.string.apps_in_row to R.string.help_choose_apps,
             R.string.categories to R.string.categories, R.string.yt_drawer_channels to R.string.help_yt_drawer_channels, R.string.yt_drawer_delay to R.string.help_yt_drawer_delay, R.string.inputs_bar to R.string.inputs_in_bar,
             R.string.sort_apps to R.string.help_order, R.string.icon_style to R.string.help_icon_style, R.string.row_size to R.string.help_row_size, R.string.row_spacing to R.string.help_row_spacing,
-            R.string.tile_radius to R.string.help_tile_radius, R.string.glow_style to R.string.help_glow_style, R.string.focus_dimming to R.string.help_focus_dimming,
+            R.string.tile_radius to R.string.help_tile_radius, R.string.glow_style to R.string.help_glow_style, R.string.focus_dimming to R.string.help_focus_dimming, R.string.standby_night to R.string.help_standby_night,
             R.string.apps_when_hidden to R.string.help_apps_when_hidden, R.string.row_name to R.string.help_row_name,
             R.string.cw_vertical_position to R.string.help_cw_vertical_position,
             R.string.show_icons to R.string.help_show_icons,
@@ -9363,6 +9592,9 @@ class MainActivity : Activity() {
         )
         const val BADGE = 0xFFFF453A.toInt()
         /** Standby's slow drifts (Ken Burns, OLED shift) move a few pixels a second: 20 frames a second is plenty. */
+        const val STANDBY_NIGHT_VEIL = 150 // of 255: the photo frame's veil at night (56 by day)
+        const val RECENTS_ID = "recents" // the Recent row's id, where a row holds its category's
+        const val RECENTS_MAX = 8
         const val STANDBY_FRAME_MS = 40L // every 3rd frame at 60 Hz, with room for jitter
         // Dark mode tokens, for AMOLED: true black, and near-black cards that read as cards because their edge
         // catches light (brightest along the top), the way light-mode cards use a soft shadow.

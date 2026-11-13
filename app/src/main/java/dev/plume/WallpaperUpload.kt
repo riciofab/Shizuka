@@ -15,13 +15,18 @@ import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 
+/** Text put in a phone page's HTML. */
+internal fun pageHtml(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+/** Text put in a single-quoted string of a phone page's script. */
+internal fun pageJs(s: String) = s.replace("\\", "\\\\").replace("'", "\\'").replace("<", "\\x3c").replace("\n", " ")
+
 /**
- * A one-page web server for adding wallpapers from a phone. It only runs while the upload panel is open,
- * and only answers on /<code> (the random code is in the QR code), so others on the Wi-Fi can't post.
- * The page sends the photo as the raw request body, so there's no multipart parsing.
- * [onUpload] runs on the server thread with the uploaded file and whether it is a video, and returns the new wallpaper's name, or null.
+ * The small web server behind the pages a phone opens from a QR code on the TV. It only runs while its panel is
+ * open, and only answers under /<code> (the random code is in the QR code), so others on the Wi-Fi can't use it.
+ * One request at a time, on its own thread. A subclass calls [start] once it is ready to answer.
  */
-internal class UploadServer(val code: String, private val temp: File, private val onUpload: (File, Boolean) -> String?) {
+internal abstract class PhoneServer(val code: String, private val threadName: String) {
     private val socket = try {
         ServerSocket(8080)
     } catch (e: IOException) {
@@ -30,8 +35,17 @@ internal class UploadServer(val code: String, private val temp: File, private va
     val port get() = socket.localPort
     @Volatile private var client: Socket? = null
 
-    init {
-        Thread(::serve, "wallpaper-upload").start()
+    /** What a request outside /<code> is told. */
+    protected abstract val notFound: String
+
+    /** Answers one request; [sub] is the path after /<code> ("" for the page itself). Runs on the server thread. */
+    protected abstract fun route(method: String, sub: String, headers: Map<String, String>, input: InputStream, out: OutputStream)
+
+    /** After each request, answered or failed. */
+    protected open fun done() {}
+
+    protected fun start() {
+        Thread(::serve, threadName).start()
     }
 
     fun stop() { socket.close(); client?.close() }
@@ -48,10 +62,10 @@ internal class UploadServer(val code: String, private val temp: File, private va
                 if (socket.isClosed) s.close()
                 s.use { handle(it) }
             } catch (e: Exception) {
-                android.util.Log.w("Plume", "upload request failed ($e)")
+                android.util.Log.w("Plume", "$threadName request failed ($e)")
             } finally {
                 client = null
-                temp.delete()
+                done()
             }
         }
     }
@@ -64,34 +78,20 @@ internal class UploadServer(val code: String, private val temp: File, private va
         val headers = generateSequence { readLine(input)?.takeIf { it.isNotEmpty() } }
             .associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
         val method = request.substringBefore(' ')
-        val path = request.substringAfter(' ').substringBefore(' ')
-        when {
-            path != "/$code" -> reply(out, 404, "text/plain", "Not found. Scan the code on the TV again.")
-            method == "GET" -> reply(out, 200, "text/html; charset=utf-8", PAGE)
-            method == "POST" -> {
-                val length = headers["content-length"]?.toLongOrNull() ?: -1
-                val video = headers["content-type"].orEmpty().startsWith("video/") // the browser sends the file's own type
-                val max = if (video) VIDEO_LIMIT else MAX_BYTES
-                if (length !in 1..max) return reply(out, 413, "text/plain", "That file is too big (${max / 1024 / 1024} MB at most).")
-                temp.outputStream().use { file ->
-                    val buf = ByteArray(64 * 1024)
-                    var left = length
-                    while (left > 0) {
-                        val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
-                        if (n < 0) throw IOException("upload cut short")
-                        file.write(buf, 0, n)
-                        left -= n
-                    }
-                }
-                val name = try {
-                    onUpload(temp, video)
-                } finally {
-                    temp.delete()
-                }
-                if (name != null) reply(out, 200, "text/plain", "Added \"$name\" to your TV.")
-                else reply(out, 415, "text/plain", if (video) "Use an H.264 or HEVC MP4 video up to 1080p." else "That doesn't look like a photo the TV can open.")
-            }
-            else -> reply(out, 405, "text/plain", "Not allowed")
+        val path = request.substringAfter(' ').substringBefore(' ').substringBefore('?')
+        if (path != "/$code" && !path.startsWith("/$code/")) return reply(out, 404, "text/plain; charset=utf-8", notFound)
+        route(method, path.removePrefix("/$code"), headers, input, out)
+    }
+
+    /** Copies a request body of [length] bytes to [sink]. */
+    protected fun readBody(input: InputStream, length: Long, sink: OutputStream) {
+        val buf = ByteArray(64 * 1024)
+        var left = length
+        while (left > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+            if (n < 0) throw IOException("upload cut short")
+            sink.write(buf, 0, n)
+            left -= n
         }
     }
 
@@ -107,20 +107,67 @@ internal class UploadServer(val code: String, private val temp: File, private va
         throw IOException("header line too long")
     }
 
-    private fun reply(out: OutputStream, status: Int, type: String, body: String) {
+    protected fun reply(out: OutputStream, status: Int, type: String, body: String) {
         val bytes = body.toByteArray()
-        out.write("HTTP/1.1 $status ${if (status == 200) "OK" else "Error"}\r\nContent-Type: $type\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 $status ${if (status == 200) "OK" else "Error"}\r\nContent-Type: $type\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".toByteArray())
         out.write(bytes)
         out.flush()
+    }
+}
+
+/** What the upload page and its answers say, in the TV's language ([added] takes the wallpaper's name, [tooBig] the limit in MB). */
+internal class UploadTexts(
+    val title: String, val heading: String, val intro: String, val choose: String, val send: String, val sending: String,
+    val another: String, val unreachable: String, val added: (String) -> String, val badVideo: String, val badPhoto: String,
+    val tooBig: (Int) -> String, val notFound: String,
+)
+
+/**
+ * The page for adding wallpapers from a phone. It sends the photo as the raw request body, so there's no multipart parsing.
+ * [onUpload] runs on the server thread with the uploaded file and whether it is a video, and returns the new wallpaper's name, or null.
+ */
+internal class UploadServer(
+    code: String, private val temp: File, private val texts: UploadTexts, private val onUpload: (File, Boolean) -> String?,
+) : PhoneServer(code, "wallpaper-upload") {
+    override val notFound get() = texts.notFound
+
+    init {
+        start()
+    }
+
+    override fun done() {
+        temp.delete()
+    }
+
+    override fun route(method: String, sub: String, headers: Map<String, String>, input: InputStream, out: OutputStream) {
+        when {
+            sub != "" -> reply(out, 404, "text/plain; charset=utf-8", texts.notFound)
+            method == "GET" -> reply(out, 200, "text/html; charset=utf-8", page(texts))
+            method == "POST" -> {
+                val length = headers["content-length"]?.toLongOrNull() ?: -1
+                val video = headers["content-type"].orEmpty().startsWith("video/") // the browser sends the file's own type
+                val max = if (video) VIDEO_LIMIT else MAX_BYTES
+                if (length !in 1..max) return reply(out, 413, "text/plain; charset=utf-8", texts.tooBig((max / 1024 / 1024).toInt()))
+                temp.outputStream().use { readBody(input, length, it) }
+                val name = try {
+                    onUpload(temp, video)
+                } finally {
+                    temp.delete()
+                }
+                if (name != null) reply(out, 200, "text/plain; charset=utf-8", texts.added(name))
+                else reply(out, 415, "text/plain; charset=utf-8", if (video) texts.badVideo else texts.badPhoto)
+            }
+            else -> reply(out, 405, "text/plain", "Not allowed")
+        }
     }
 
     private companion object {
         const val MAX_BYTES = 25L * 1024 * 1024
 
-        val PAGE = """
+        fun page(t: UploadTexts) = """
             <!doctype html>
-            <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>Plume wallpaper</title>
+            <html dir="auto"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>${pageHtml(t.title)}</title>
             <style>
               body{font:17px system-ui,sans-serif;margin:0;padding:32px 20px;background:#f7f8fa;color:#111214}
               @media (prefers-color-scheme:dark){body{background:#09090b;color:#f5f5f7}}
@@ -130,19 +177,19 @@ internal class UploadServer(val code: String, private val temp: File, private va
               @media (prefers-color-scheme:dark){button{background:#f5f5f7;color:#111214}}
               button:disabled{opacity:.35} input{display:none} #s{min-height:1.5em}
             </style></head><body>
-            <h1>Add a wallpaper</h1>
-            <p>Pick a photo, or an H.264 or HEVC MP4 video up to 1080p and 350 MB. A photo shows on your TV a moment after you upload it; a video plays there first.</p>
-            <label><input id="f" type="file" accept="image/*,video/mp4"><span id="n">Choose photo or video</span></label>
-            <button id="b" disabled>Upload to TV</button>
+            <h1>${pageHtml(t.heading)}</h1>
+            <p>${pageHtml(t.intro)}</p>
+            <label><input id="f" type="file" accept="image/*,video/mp4"><span id="n">${pageHtml(t.choose)}</span></label>
+            <button id="b" disabled>${pageHtml(t.send)}</button>
             <div id="s"></div>
             <script>
               const f=document.getElementById('f'),b=document.getElementById('b'),s=document.getElementById('s'),n=document.getElementById('n');
-              f.onchange=()=>{b.disabled=!f.files.length;n.textContent=f.files.length?f.files[0].name:'Choose photo or video';s.textContent=''};
+              f.onchange=()=>{b.disabled=!f.files.length;n.textContent=f.files.length?f.files[0].name:'${pageJs(t.choose)}';s.textContent=''};
               b.onclick=async()=>{
-                b.disabled=true;s.textContent='Uploading…';
+                b.disabled=true;s.textContent='${pageJs(t.sending)}';
                 try{const r=await fetch(location.pathname,{method:'POST',body:f.files[0]});
-                  s.textContent=(await r.text())+(r.ok?' You can send another.':'');}
-                catch(e){s.textContent='Couldn\'t reach the TV. Is the upload screen still open?';}
+                  s.textContent=(await r.text())+(r.ok?' ${pageJs(t.another)}':'');}
+                catch(e){s.textContent='${pageJs(t.unreachable)}';}
                 b.disabled=false;
               };
             </script></body></html>

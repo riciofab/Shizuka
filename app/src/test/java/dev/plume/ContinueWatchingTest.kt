@@ -73,6 +73,36 @@ class ContinueWatchingTest {
         assertEquals(listOf("x", "y"), newestPerApp(plain, 3) { "app" })
     }
 
+    @Test fun aDrawerStartsWithWhatWasWatchedLast() {
+        // Watch Next rows as the TV hands them over, in no useful order: a suggestion, then two shows in progress.
+        val started = listOf(
+            watchSortKey(2, 9_000_000_000_000) to "new season",
+            watchSortKey(0, 1_700_000_000_000) to "watched last week",
+            watchSortKey(0, 1_700_500_000_000) to "watched yesterday",
+        )
+        // The app's own channel: undated cards keep the app's order, a dated one comes before them.
+        val opened = 1_600_000_000_000
+        val channel = listOf(channelSortKey(0, opened) to "pick 1", channelSortKey(0, opened) to "pick 2", channelSortKey(1_650_000_000_000, opened) to "resumed")
+        assertEquals(listOf("watched yesterday", "watched last week", "new season", "resumed", "pick 1", "pick 2"), drawerOrder(started, channel))
+    }
+
+    @Test fun rowsOfOneSyncKeepTheAppsOrder() {
+        // What Netflix wrote on a TV: two older shows, then, in one sync, the show just watched and one it promotes 17 ms later.
+        val sansRegret = 1_791_214_431_000
+        val jobMortelle = 1_794_183_396_000
+        val ghosts = 1_794_605_138_435
+        val lupin = 1_794_605_138_452
+        val times = syncOrder(listOf(sansRegret, jobMortelle, ghosts, lupin))
+        val names = listOf("Sans regret", "Une job mortelle", "Ghosts", "Lupin")
+        assertEquals(listOf("Ghosts", "Lupin", "Une job mortelle", "Sans regret"), names.indices.sortedByDescending { times[it] }.map { names[it] })
+        // Shows watched minutes apart are not a sync: newest first, as written.
+        assertEquals(listOf(1_000_000L, 1_600_000L), syncOrder(listOf(1_000_000L, 1_600_000L)))
+        // A longer sync, each row within the gap of the next: still one batch, first written first.
+        assertEquals(listOf(5_000L, 3_500L, 2_000L), syncOrder(listOf(2_000L, 3_500L, 5_000L)))
+        assertEquals(emptyList<Long>(), syncOrder(emptyList()))
+        assertEquals(listOf(0L, 0L), syncOrder(listOf(0L, 0L))) // rows with no time stay as they are
+    }
+
     @Test fun onlyReadableSeasonAndEpisodeNumbersShow() {
         assertEquals("5", displayNumber("5"))
         assertEquals("12", displayNumber(" 12 "))

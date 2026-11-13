@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.4.0-blue">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.4.1-blue">
   <img alt="Android 8.0+" src="https://img.shields.io/badge/Android-8.0%2B-3ddc84">
   <img alt="APK size" src="https://img.shields.io/badge/APK-%3C1%20MB-blue">
   <a href="LICENSE"><img alt="GPL-3.0 License" src="https://img.shields.io/github/license/riciofab/Shizuka"></a>

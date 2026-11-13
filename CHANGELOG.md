@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1
+
+- **Veille par appui long sur Retour.** Un appui court sur **Retour** à l'accueil ne lance plus le mode veille : maintenez **Retour** pour l'afficher.
+- **Accueil beaucoup plus économe.** La lueur animée de la tuile sélectionnée se fige après 10 s sans toucher la télécommande et reprend dès le prochain appui : la consommation au repos passe d'environ 60 % à 2 % d'un cœur processeur.
+- **Veille plus légère.** L'effet Ken Burns et le décalage anti-marquage OLED consomment deux fois moins de ressources, sans différence visible.
+- **Notes de version corrigées.** L'écran « Quoi de neuf » n'affiche plus d'anciennes notes de Plume Launcher.
+
 ## 1.4.0
 
 - **Épinglage et gestion des vignettes dans les tiroirs.** Appui long sur n'importe quelle vignette de tiroir (chaînes TV, reprises de lecture) pour l'épingler en tête avec une étoile (★), la masquer ou ouvrir son application parente.

@@ -15,17 +15,23 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "1.4.1"
-        // What's new: only this version's section of CHANGELOG.md ships, one entry per line, ** marks kept for bold.
+        // What's new: only this version's section of the changelog ships, one entry per line, ** marks kept for bold.
         // A ### heading ships as a line that starts with #. A fix release (1.7.1) ships its x.y section after its own,
         // so people who update from 1.6 still see what 1.7 brought.
-        val changelog = rootProject.file("CHANGELOG.md").readText().replace("\r", "")
-        val section = { v: String -> changelog.substringAfter("\n## $v\n", "").substringBefore("\n## ") }
+        // Two changelogs, so the notes follow the TV's language: CHANGELOG.md is French (whats_new_fr), CHANGELOG.en.md
+        // is English (whats_new, which every other language reads). MainActivity.whatsNew() picks one.
         val minor = versionName!!.split('.').take(2).joinToString(".")
-        val notes = (section(versionName!!) + if (minor != versionName) "\n" + section(minor) else "")
-            .lines().filter { it.startsWith("- ") || it.startsWith("### ") }
-            .map { if (it.startsWith("### ")) "#" + it.removePrefix("### ") else it.removePrefix("- ") }
-        require(notes.isNotEmpty()) { "CHANGELOG.md has no entries under \"## $versionName\"" }
-        resValue("string", "whats_new", notes.joinToString("\\n") { it.replace("'", "\\'").replace("\"", "\\\"") })
+        fun whatsNew(file: String, name: String) {
+            val changelog = rootProject.file(file).readText().replace("\r", "")
+            val section = { v: String -> changelog.substringAfter("\n## $v\n", "").substringBefore("\n## ") }
+            val notes = (section(versionName!!) + if (minor != versionName) "\n" + section(minor) else "")
+                .lines().filter { it.startsWith("- ") || it.startsWith("### ") }
+                .map { if (it.startsWith("### ")) "#" + it.removePrefix("### ") else it.removePrefix("- ") }
+            require(notes.isNotEmpty()) { "$file has no entries under \"## $versionName\"" }
+            resValue("string", name, notes.joinToString("\\n") { it.replace("'", "\\'").replace("\"", "\\\"") })
+        }
+        whatsNew("CHANGELOG.en.md", "whats_new")
+        whatsNew("CHANGELOG.md", "whats_new_fr")
     }
 
     buildFeatures {

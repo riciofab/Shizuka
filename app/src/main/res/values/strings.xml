@@ -378,6 +378,20 @@
     <string name="help_category_titles">Show or hide the category title above each row.</string>
     <string name="help_categories">Create groups of apps and display them on separate rows.</string>
     <string name="add_category">Add a category</string>
+    <string name="recents">Recent</string>
+    <string name="recents_row">Recent apps row</string>
+    <!-- Organising the home screen from a phone: the TV's panel, then the phone's page -->
+    <string name="manage_from_phone">Organize from your phone</string>
+    <string name="mg_intro">Rename your categories, and choose which apps go in each one and in what order. Then send the layout to the TV.</string>
+    <string name="mg_rest">Not on the home screen</string>
+    <string name="mg_move_to">Move to…</string>
+    <string name="mg_save">Save to TV</string>
+    <string name="mg_saved">Saved. Your TV shows the new layout.</string>
+    <string name="mg_failed">The TV couldn\'t apply this layout.</string>
+    <string name="mg_loading">Loading…</string>
+    <string name="mg_waiting">Waiting for your phone…</string>
+    <string name="mg_applied">Layout updated from your phone.</string>
+    <string name="mg_empty">No apps yet</string>
     <string name="category_name_hint">Category name</string>
     <string name="rename_category">Rename</string>
     <string name="delete_category">Delete</string>
@@ -410,6 +424,10 @@
     <string name="delete_input">Delete input</string>
     <string name="input_name_hint">Device name</string>
     <string name="manage_inputs">Manage inputs</string>
+    <string name="no_more_inputs">Every HDMI input of this TV is already in the bar.</string>
+    <string name="input_port">HDMI port</string>
+    <string name="input_port_none">None</string>
+    <string name="input_no_port">%1$s is not linked to an HDMI port. Choose one in Manage inputs.</string>
     <string name="row_spacing">Row spacing</string>
     <string name="cw_vertical_position">Continue Watching position</string>
     <string name="help_cw_vertical_position">Adjusts vertical placement and elevation of Continue Watching.</string>
@@ -526,5 +544,30 @@
     <string name="standby_slideshow">Photo frame slideshow</string>
     <string name="slideshow_30m">30 minutes</string>
     <string name="standby_music">Now playing in photo frame</string>
+    <string name="standby_night">Dim the photo frame at night</string>
+    <string name="help_standby_night">From sunset to sunrise, the photo frame is much darker, so it doesn\'t light up the room.</string>
+    <string name="sys_device">%1$s · Android %2$s</string>
+    <string name="sys_ip">Network address: %1$s</string>
+    <string name="sys_storage">Free storage: %1$s of %2$s</string>
     <string name="music_access_hint">Allow Shizuka under Notification access to show what\'s playing</string>
+    <!-- About, under What's new. "Plume Launcher" is the project Shizuka was forked from: keep its name. -->
+    <string name="about_fork">A fork of Plume Launcher for Android TV.\nBuilt for smoothness, design and modern customisation.</string>
+    <!-- App drawers (the thumbnails under an app) -->
+    <string name="drawer_no_channels">No channels found. Open the app to load its feeds.</string>
+    <string name="drawer_catalogue">Catalogue and recommendations</string>
+    <string name="channel_n">Channel %1$s</string>
+    <!-- The web page a phone opens to send a wallpaper to the TV -->
+    <string name="up_page_title">Shizuka wallpaper</string>
+    <string name="up_heading">Add a wallpaper</string>
+    <string name="up_intro">Pick a photo, or an H.264 or HEVC MP4 video up to 1080p and 350 MB. A photo shows on your TV a moment after you upload it; a video plays there first.</string>
+    <string name="up_choose">Choose photo or video</string>
+    <string name="up_send">Upload to TV</string>
+    <string name="up_sending">Uploading…</string>
+    <string name="up_another">You can send another.</string>
+    <string name="up_unreachable">Couldn\'t reach the TV. Is the upload screen still open?</string>
+    <string name="up_added">Added \"%1$s\" to your TV.</string>
+    <string name="up_bad_video">Use an H.264 or HEVC MP4 video up to 1080p.</string>
+    <string name="up_bad_photo">That doesn\'t look like a photo the TV can open.</string>
+    <string name="up_too_big">That file is too big (%1$d MB at most).</string>
+    <string name="up_not_found">Not found. Scan the code on the TV again.</string>
 </resources>

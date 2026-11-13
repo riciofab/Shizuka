@@ -51,7 +51,11 @@ Translations are welcome. Shipping every language costs very little: each langua
 - Run `python3 tools/lang.py check` before you send it: it lists the keys your language lacks, the keys it has that English does not, and the texts whose `%s` or `%d` markers differ from English. If your pull request adds a string to `values/strings.xml`, run it too and say in the description which languages were not translated.
 - If you add a language, please say whether you're happy to be asked about new strings later. Languages that fall far behind may be removed.
 
-Some of Plume's text still lives in the Kotlin code instead of `strings.xml`. Please don't move strings into `strings.xml` inside a translation pull request; open an issue instead, so the move happens once for every language.
+The app follows the TV's language: it ships in French, English, Portuguese (Portugal) and Japanese, all complete, and shows English on a TV set to any other language. A language is only kept while it is complete: a half-translated app reads worse than an English one.
+
+The release notes shown as What's new come from two files: `CHANGELOG.md` (French) and `CHANGELOG.en.md` (English, shown for every other language). A release needs its section in both, or the build fails.
+
+If you find text that still lives in the Kotlin code instead of `strings.xml`, please don't move it inside a translation pull request; open an issue instead, so the move happens once for every language.
 
 ## Reporting bugs
 

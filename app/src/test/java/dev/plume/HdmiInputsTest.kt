@@ -30,6 +30,22 @@ class HdmiInputsTest {
         assertEquals(null, Remap.hardwareNumber("com.example/.Service/HW2/HDMI2050")) // a CEC device's id, not its port's
     }
 
+    @Test fun theBarFollowsTheTvsPorts() {
+        val tv = listOf("hdmi:tv/HW1" to "HDMI 1", "hdmi:tv/HW2" to "Xbox", "hdmi:tv/HW3" to "Philips box")
+        // Nothing saved (or a list saved while the TV had no inputs to report yet): every port comes in.
+        val first = TopInputManager.merge(emptyList(), tv, emptySet())
+        assertEquals(listOf("tv/HW1", "tv/HW2", "tv/HW3"), first.map { it.port })
+        assertEquals(listOf("hdmi", "xbox", "hdmi"), first.map { it.icon }) // "box" is no Freebox, "ps" no PlayStation
+        // What the user made of an input stays as it is; a port plugged in later joins at the end, once.
+        val mine = listOf(first[1].copy(name = "Console", icon = "playstation"), first[0])
+        val later = TopInputManager.merge(mine, tv, emptySet())
+        assertEquals(mine + first[2], later)
+        assertEquals(later, TopInputManager.merge(later, tv, emptySet()))
+        // A port the user deleted stays out, and an input with no port (added by hand, once) is kept.
+        val byHand = TopInput("input_1", "Wii", "wii")
+        assertEquals(listOf(byHand, first[0]), TopInputManager.merge(listOf(byHand), tv, setOf("tv/HW2", "tv/HW3")))
+    }
+
     @Test fun row() {
         assertTrue(inRow("com.app", emptySet()))
         assertFalse(inRow("com.app", setOf("com.app")))

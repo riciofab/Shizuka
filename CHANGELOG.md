@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1
+
+- **Très grandes photos en fond d'écran.** Shizuka ne plante plus en boucle après l'envoi d'une photo de très haute résolution (environ 27 mégapixels et plus) depuis le téléphone : la photo est réduite à la taille utile à l'écran.
+- **Une image impossible à afficher ne bloque plus l'accueil.** Shizuka affiche alors le fond d'écran par défaut.
+
 ## 1.5.0
 
 - **Organisez l'accueil depuis votre téléphone.** Dans **Paramètres → Ligne d'applis → Catégories → Organiser depuis le téléphone**, scannez le QR code : renommez vos catégories au clavier, changez leur ordre et celui des applis, déplacez une appli d'une catégorie à l'autre. L'accueil se met à jour dès l'enregistrement.

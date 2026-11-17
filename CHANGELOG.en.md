@@ -3,6 +3,11 @@
 The English release notes. The app shows them as "What's new" on every TV that is not set to French;
 [CHANGELOG.md](CHANGELOG.md) holds the French ones. Each release needs its section in both files.
 
+## 1.5.1
+
+- **Very large photos as wallpaper.** Shizuka no longer crashes in a loop after you send a very high-resolution photo (about 27 megapixels and up) from your phone: the photo is brought down to the size the screen needs.
+- **A picture that can't be shown no longer blocks the home screen.** Shizuka shows the default wallpaper instead.
+
 ## 1.5.0
 
 - **Organise the home screen from your phone.** In **Settings → Apps row → Categories → Organize from your phone**, scan the QR code: type your categories' names, reorder them and their apps, and move an app from one category to another. The home screen updates as soon as you save.

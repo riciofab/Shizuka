@@ -236,6 +236,26 @@ internal fun fitWallpaper(open: () -> InputStream): Bitmap? {
 }
 
 /**
+ * The sample size (a power of two, as the decoder wants) that brings a [w] × [h] photo down to [UNCROPPED_MAX] on
+ * its longer side. Never larger than that: Android refuses to draw a bitmap over 100 MB, and a 36 MP photo kept
+ * whole is 145 MB, which crashed the home screen on every start once it was the wallpaper.
+ */
+internal fun uncroppedSample(w: Int, h: Int): Int {
+    var sample = 1
+    while (maxOf(w, h) / sample > UNCROPPED_MAX) sample *= 2
+    return sample
+}
+
+/**
+ * Whether Android draws a bitmap of [bytes]: a view that draws one of 100 MB or more throws ("Canvas: trying to draw
+ * too large bitmap"), on every frame, which no try around the decode catches.
+ */
+internal fun drawable(bytes: Int) = bytes < 100 * 1024 * 1024
+
+/** The longer side of an uncropped wallpaper, at most: a 4K screen's width. 3840 × 3840 is 59 MB, under the 100 MB limit. */
+internal const val UNCROPPED_MAX = 3840
+
+/**
  * Decodes a photo preserving its full original aspect ratio (uncropped).
  * Upright (handles EXIF orientation), downsampled if larger than 3840px.
  */
@@ -255,9 +275,7 @@ internal fun decodeUncroppedWallpaper(open: () -> InputStream): Bitmap? {
     } catch (e: Exception) {
         0
     }
-    val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
-    var sample = 1
-    while (maxDim / (sample * 2) >= 3840) sample *= 2
+    val sample = uncroppedSample(bounds.outWidth, bounds.outHeight)
     val decoded = open().use {
         BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
     } ?: return null

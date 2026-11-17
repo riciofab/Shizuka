@@ -2160,13 +2160,13 @@ class MainActivity : Activity() {
         }
         val fallback = defaultWallpaper(dark)
         io.execute {
-            val own = try {
+            val own = (try {
                 if (video) videoPoster(File(wallpaperDir(), choice.removePrefix("video:"))) else decodeWallpaper(choice)
             } catch (e: Exception) {
                 null
             } catch (e: OutOfMemoryError) { // a picture on a TV short of memory: show the default instead of crashing
                 null
-            }
+            })?.takeIf { drawable(it.byteCount) } // one too big to draw would crash every start: the default instead
             if (choice.startsWith("folder:")) {
                 if (own == null) {
                     folderPending = true

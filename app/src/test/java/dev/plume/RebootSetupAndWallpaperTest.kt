@@ -19,6 +19,22 @@ class RebootSetupAndWallpaperTest {
         assertFalse(isGoogleTvLauncher(true, PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED))
     }
 
+    @Test fun aPhotoIsNeverKeptLargerThanAndroidDraws() {
+        // The 36 MP photo that crashed the home screen: it was kept whole (the old rule only halved from 7680 px up).
+        assertEquals(2, uncroppedSample(7360, 4912))
+        assertFalse(drawable(7360 * 4912 * 4))
+        assertTrue(drawable(7360 / 2 * (4912 / 2) * 4))
+        // Whatever the photo, what is kept fits the limit, and a photo already small enough is left alone.
+        for ((w, h) in listOf(3840 to 2160, 3841 to 2160, 4000 to 3000, 2160 to 7680, 12000 to 9000, 16384 to 16384, 1920 to 1080)) {
+            val s = uncroppedSample(w, h)
+            assertTrue("$w x $h", maxOf(w, h) / s <= UNCROPPED_MAX)
+            assertTrue("$w x $h", drawable(w / s * (h / s) * 4))
+            assertTrue("$w x $h", s == 1 || maxOf(w, h) / (s / 2) > UNCROPPED_MAX) // and no smaller than it has to be
+        }
+        assertEquals(1, uncroppedSample(3840, 2160))
+        assertEquals(1, uncroppedSample(1920, 1080))
+    }
+
     @Test fun emptyFolderAtBootReturnsNullAndPreservesDeck() {
         val deck = ArrayDeque(listOf(10L, 20L))
         val picked = pickFolderPhoto(emptyList(), currentSaved = 10L, deck = deck)
